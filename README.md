@@ -40,6 +40,13 @@ npm install
 npm start
 ```
 
+Or use specific platform commands:
+```bash
+npm run ios      # iOS simulator
+npm run android  # Android emulator
+npm run web      # Web browser
+```
+
 4. Open the app:
    - Scan the QR code with Expo Go app (iOS/Android)
    - Press `i` for iOS simulator
