@@ -4,7 +4,7 @@
 
 Subletto is a **mobile-first** application built with:
 
-- **Frontend:** Expo React Native (TypeScript)
+- **Frontend:** Expo SDK 54 with React Native 0.81.5 and React 19.1.0 (TypeScript)
 - **Backend:** Supabase (Postgres, Auth, Storage, Edge Functions)
 - **Infra:** Supabase project hosts the database, auth, storage, and any server-side logic via RLS and functions.
 
@@ -12,15 +12,25 @@ The mobile app talks directly to Supabase using the official `@supabase/supabase
 
 This bootstrap repo is intentionally light on code – Cursor will generate most of the implementation using these docs as context.
 
+### Platform Support
+
+- **iOS**: Full support via Expo SDK 54, tested on iOS Simulator and physical devices via Expo Go
+- **Android**: Full support via Expo SDK 54, tested on Android Emulator and physical devices via Expo Go
+- **Web**: Basic support via `react-native-web`
+
 ## 2. Frontend
 
 ### 2.1 Tech Stack
 
-- **Expo React Native** (TypeScript)
-- **React Navigation** for navigation structure
-- **Zustand** or **Redux Toolkit** for simple global state (auth, user, filters)
-- **react-native-maps** for map screen
-- **Poppins** font family for UI
+- **Expo SDK 54** (`expo@^54.0.25`)
+- **React Native 0.81.5** (`react-native@0.81.5`)
+- **React 19.1.0** (`react@19.1.0`)
+- **TypeScript 5.3.3** (`typescript@^5.3.3`)
+- **React Navigation 6** (`@react-navigation/native@^6.1.9`, `@react-navigation/bottom-tabs@^6.5.11`, `@react-navigation/native-stack@^6.9.17`)
+- **Zustand 4.5.0** (`zustand@^4.5.0`) for global state management
+- **react-native-maps 1.20.1** (`react-native-maps@1.20.1`) for map screen
+- **Expo Vector Icons** (`@expo/vector-icons@^15.0.3`) for icons
+- **Poppins** font family (`@expo-google-fonts/poppins@^0.2.3`) for UI typography
 
 ### 2.2 Structure (Planned)
 

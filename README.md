@@ -3,10 +3,23 @@
 This repo is a **Cursor bootstrap kit** for building Subletto, a mobile app for sublets, lease takeovers, and mid‑term room rentals.
 
 You'll use:
-- **Expo React Native** for the mobile app UI
+- **Expo SDK 54** with **React Native 0.81.5** and **React 19.1.0** for the mobile app UI
 - **Supabase** for database, auth, storage, and (optionally) edge functions
 
 Everything else (actual app code, schemas, functions) will be generated and iterated on inside Cursor using the docs in the `docs/` folder.
+
+## Tech Stack Versions
+
+### Mobile App (`subletto-app/`)
+- **Expo SDK**: 54.0.25
+- **React Native**: 0.81.5
+- **React**: 19.1.0
+- **TypeScript**: 5.3.3
+- **React Navigation**: 6.x
+- **Zustand**: 4.5.0
+- **react-native-maps**: 1.20.1
+
+See `subletto-app/package.json` for the complete list of dependencies.
 
 ## Quick Start
 
