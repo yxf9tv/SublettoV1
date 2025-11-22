@@ -1,8 +1,9 @@
 import React from 'react';
 import { StyleSheet, TouchableOpacity, View } from 'react-native';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { colors, typography } from '../theme';
-import Typography, { Caption } from './Typography';
+import { Ionicons } from '@expo/vector-icons';
+import { colors } from '../theme';
+import { Caption } from './Typography';
 
 export default function BottomNavBar({
   state,
@@ -54,26 +55,26 @@ export default function BottomNavBar({
       >
         {isPostTab ? (
           <View style={styles.postButton}>
-            <Typography variant="body" style={styles.postIcon}>
-              +
-            </Typography>
+            <Ionicons name="add" size={28} color={colors.card} />
           </View>
         ) : (
           <>
             <View style={styles.tabIcon}>
-              {/* Icon placeholder - can be replaced with actual icons later */}
-              <Typography
-                variant="body"
-                style={[
-                  styles.tabIconText,
-                  isFocused && styles.tabIconTextActive,
-                ]}
-              >
-                {route.name === 'Home' && '🏠'}
-                {route.name === 'Map' && '🗺️'}
-                {route.name === 'Messages' && '💬'}
-                {route.name === 'Profile' && '👤'}
-              </Typography>
+              <Ionicons
+                name={
+                  route.name === 'Home'
+                    ? 'home'
+                    : route.name === 'Map'
+                    ? 'map-outline'
+                    : route.name === 'Messages'
+                    ? 'chatbubble-ellipses-outline'
+                    : route.name === 'Profile'
+                    ? 'person-outline'
+                    : 'ellipse-outline'
+                }
+                size={22}
+                color={isFocused ? '#113D43' : '#9CA3AF'}
+              />
             </View>
             <Caption
               style={[
@@ -117,25 +118,19 @@ const styles = StyleSheet.create({
   },
   postTab: {
     flex: 0,
-    marginHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   tabIcon: {
     marginBottom: 4,
   },
-  tabIconText: {
-    fontSize: 24,
-    opacity: 0.6,
-  },
-  tabIconTextActive: {
-    opacity: 1,
-  },
   tabLabel: {
-    fontSize: 11,
-    color: colors.textPrimaryOpacity[70],
+    fontSize: 10,
+    marginTop: 2,
+    color: '#9CA3AF',
   },
   tabLabelActive: {
-    color: colors.accentBlue,
-    fontWeight: '600',
+    color: '#113D43',
   },
   postButton: {
     width: 56,
@@ -149,12 +144,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.3,
     shadowRadius: 8,
     elevation: 6,
-  },
-  postIcon: {
-    fontSize: 28,
-    color: colors.card,
-    fontWeight: '300',
-    lineHeight: 28,
   },
 });
 

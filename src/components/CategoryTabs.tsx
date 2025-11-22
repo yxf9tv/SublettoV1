@@ -11,9 +11,9 @@ interface CategoryTabsProps {
 }
 
 const categories: { key: ListingType; label: string }[] = [
-  { key: 'ALL', label: 'All' },
-  { key: 'SUBLET', label: 'Sublets' },
-  { key: 'TAKEOVER', label: 'Lease Takeovers' },
+  { key: 'ALL', label: 'Rental House' },
+  { key: 'SUBLET', label: 'Apartment' },
+  { key: 'TAKEOVER', label: 'Houses' },
   { key: 'ROOM', label: 'Rooms' },
 ];
 
@@ -32,7 +32,12 @@ export default function CategoryTabs({
         return (
           <TouchableOpacity
             key={category.key}
-            style={[styles.pill, isSelected && styles.pillSelected]}
+            style={[
+              styles.pill,
+              isSelected && styles.pillSelected,
+              category.key !== categories[categories.length - 1].key &&
+                styles.pillMargin,
+            ]}
             onPress={() => onCategoryChange(category.key)}
             activeOpacity={0.7}
           >
@@ -57,19 +62,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 16,
     paddingVertical: 12,
-    gap: 8,
   },
   pill: {
-    paddingHorizontal: 20,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 4,
     borderRadius: 20,
-    backgroundColor: colors.card,
-    borderWidth: 1,
-    borderColor: colors.gray[200],
+    backgroundColor: '#F2F2F2',
+    borderWidth: 0,
+  },
+  pillMargin: {
+    marginRight: 8,
   },
   pillSelected: {
-    backgroundColor: colors.accentBlue,
-    borderColor: colors.accentBlue,
+    backgroundColor: '#1E1E1E',
+    borderColor: '#1E1E1E',
   },
   pillText: {
     color: colors.textPrimary,

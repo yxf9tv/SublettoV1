@@ -14,21 +14,13 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.subletto.app",
-      "config": {
-        "googleMapsApiKey": "YOUR_IOS_GOOGLE_MAPS_API_KEY"
-      }
+      "bundleIdentifier": "com.subletto.app"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F5F5F7"
       },
-      "package": "com.subletto.app",
-      "config": {
-        "googleMaps": {
-          "apiKey": "YOUR_ANDROID_GOOGLE_MAPS_API_KEY"
-        }
-      }
+      "package": "com.subletto.app"
     },
     "plugins": [],
     "web": {}

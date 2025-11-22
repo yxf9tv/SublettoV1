@@ -1,6 +1,7 @@
 import React from 'react';
 import { StyleSheet, TextInput, View, TouchableOpacity } from 'react-native';
 import { colors, typography } from '../theme';
+import Typography from './Typography';
 
 interface SearchBarProps {
   placeholder?: string;
@@ -23,6 +24,9 @@ export default function SearchBar({
       disabled={!onPress}
     >
       <View style={styles.inputContainer}>
+        <Typography variant="body" style={styles.searchIcon}>
+          🔍
+        </Typography>
         <TextInput
           style={styles.input}
           placeholder={placeholder}
@@ -31,6 +35,11 @@ export default function SearchBar({
           onChangeText={onChangeText}
           editable={!!onChangeText}
         />
+        <TouchableOpacity style={styles.filterButton}>
+          <Typography variant="body" style={styles.filterIcon}>
+            ☰
+          </Typography>
+        </TouchableOpacity>
       </View>
     </TouchableOpacity>
   );
@@ -41,20 +50,33 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   inputContainer: {
-    backgroundColor: colors.card,
+    backgroundColor: '#F2F2F2',
     borderRadius: 12,
-    paddingHorizontal: 16,
-    paddingVertical: 12,
+    paddingHorizontal: 11,
+    paddingVertical: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  searchIcon: {
+    fontSize: 24,
+    marginRight: 8,
   },
   input: {
     ...typography.body,
+    flex: 1,
     fontSize: 16,
     color: colors.textPrimary,
+  },
+  filterButton: {
+    padding: 4,
+  },
+  filterIcon: {
+    fontSize: 24,
   },
 });
 
