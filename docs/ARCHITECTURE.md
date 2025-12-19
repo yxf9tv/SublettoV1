@@ -20,6 +20,32 @@ This bootstrap repo is intentionally light on code – Cursor will generate most
 
 ## 2. Frontend
 
+### 2.0 Environment Variables
+
+The app uses Expo environment variables prefixed with `EXPO_PUBLIC_`:
+
+- `EXPO_PUBLIC_SUPABASE_URL`: Your Supabase project URL (e.g., `https://your-project.supabase.co`)
+- `EXPO_PUBLIC_SUPABASE_ANON_KEY`: Your Supabase anonymous/public API key
+
+These variables are automatically loaded by Expo and accessible via `process.env.EXPO_PUBLIC_SUPABASE_URL` and `process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY`.
+
+**Setup:**
+1. Create a `.env` file in the `subletto-app/` directory
+2. Add your Supabase credentials:
+   ```
+   EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+   EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   ```
+3. The `.env` file is already in `.gitignore` to keep credentials secure
+4. Use `.env.example` as a template for other developers
+
+**Supabase Client Usage:**
+The Supabase client is initialized in `subletto-app/src/lib/supabaseClient.ts` and exported as a singleton. Import it in your components:
+
+```typescript
+import { supabase } from '../lib/supabaseClient';
+```
+
 ### 2.1 Tech Stack
 
 - **Expo SDK 54** (`expo@^54.0.25`)
@@ -192,12 +218,26 @@ RLS policies will ensure:
   - Lightly shadowed
   - Persistently consistent across screens (same paddings, spacing, etc.)
 
-## 6. Cursor’s Role
+## 6. Database Migrations
+
+The database schema has been created via Supabase migrations. All tables, RLS policies, indexes, and constraints are in place:
+
+- `profiles` - User profile data extending auth.users
+- `listings` - Property listings with enum type (SUBLET, TAKEOVER, ROOM)
+- `listing_images` - Images associated with listings
+- `saved_listings` - User's saved/favorited listings
+- `chats` - Chat conversations about listings
+- `chat_participants` - Users participating in chats
+- `messages` - Messages within chats
+
+All migrations have been applied to the Supabase project. RLS policies ensure proper data access control.
+
+## 7. Cursor's Role
 
 Cursor will:
 - Generate Expo app structure in `subletto-app/`
-- Generate Supabase schema migration SQL and setup scripts
-- Generate Supabase client helpers in the app
+- Generate Supabase schema migration SQL and setup scripts (completed)
+- Generate Supabase client helpers in the app (completed)
 - Implement each screen to match the PRD and design system
 - Implement messaging, listing CRUD, and saved listings features using Supabase
 
