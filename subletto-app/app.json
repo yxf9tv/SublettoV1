@@ -1,10 +1,11 @@
 {
   "expo": {
-    "name": "Subletto",
-    "slug": "subletto-app",
+    "name": "Room",
+    "slug": "room-app",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "scheme": "room",
     "splash": {
       "resizeMode": "contain",
       "backgroundColor": "#F5F5F7"
@@ -14,16 +15,15 @@
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.subletto.app"
+      "bundleIdentifier": "com.room.app"
     },
     "android": {
       "adaptiveIcon": {
         "backgroundColor": "#F5F5F7"
       },
-      "package": "com.subletto.app"
+      "package": "com.room.app"
     },
     "plugins": [],
     "web": {}
   }
 }
-

@@ -1,22 +1,23 @@
 /**
- * Subletto Color Palette
- * Based on design tokens from ARCHITECTURE.md
+ * Room Color Palette
+ * Black and white theme for buttons, with appropriate accent colors for UI elements
  */
 
 export const colors = {
-  // Primary colors
-  textPrimary: '#113D43',
-  accentBlue: '#2C67FF',
+  // Primary colors - Black & White theme for buttons/actions
+  textPrimary: '#111827',
+  accent: '#111827',  // Black for buttons and primary actions
+  accentBlue: '#111827',  // Kept for backwards compatibility
   
   // Background colors
-  background: '#F5F5F7',
+  background: '#FFFFFF',
   card: '#FFFFFF',
   
-  // Semantic colors (for future use)
-  success: '#34C759',
-  error: '#FF3B30',
-  warning: '#FF9500',
-  info: '#2C67FF',
+  // Semantic colors - used for tags, badges, and indicators
+  success: '#10B981',  // Green for recommended, verified, etc.
+  error: '#EF4444',    // Red for errors
+  warning: '#F59E0B',  // Amber/gold for stars, warnings
+  info: '#6B7280',     // Gray for info
   
   // Neutral colors
   gray: {

@@ -64,10 +64,10 @@ export default function LoginScreen() {
           {/* Header */}
           <View style={styles.header}>
             <View style={styles.logoContainer}>
-              <Ionicons name="home" size={48} color={colors.accentBlue} />
+              <Ionicons name="people" size={48} color={colors.accentBlue} />
             </View>
             <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to continue to Subletto</Text>
+            <Text style={styles.subtitle}>Sign in to continue to Room</Text>
           </View>
 
           {/* Form */}

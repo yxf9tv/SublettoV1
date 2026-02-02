@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -9,9 +9,10 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
-import { ListingFormData, LISTING_TYPE_OPTIONS } from './types';
+import { ListingFormData } from './types';
 
-const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || '';
+// Support both naming conventions for Google API key
+const GOOGLE_PLACES_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_PLACES_API_KEY || process.env.EXPO_PUBLIC_GOOGLE_MAPS_API_KEY || '';
 
 interface Props {
   formData: ListingFormData;
@@ -20,6 +21,7 @@ interface Props {
 
 export default function Step1Basics({ formData, updateFormData }: Props) {
   const placesRef = useRef<any>(null);
+  const [useManualEntry, setUseManualEntry] = useState(!GOOGLE_PLACES_API_KEY);
 
   const handlePlaceSelect = (data: any, details: any) => {
     if (!details) return;
@@ -81,38 +83,81 @@ export default function Step1Basics({ formData, updateFormData }: Props) {
       contentContainerStyle={styles.scrollContent}
       nestedScrollEnabled={true}
     >
-      {/* Listing Type */}
+      {/* Room Details - Always visible since Room is the only listing type */}
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>What type of listing is this?</Text>
-        <View style={styles.typeOptions}>
-          {LISTING_TYPE_OPTIONS.map((option) => (
-            <TouchableOpacity
-              key={option.key}
-              style={[
-                styles.typeOption,
-                formData.type === option.key && styles.typeOptionActive,
-              ]}
-              onPress={() => updateFormData({ type: option.key })}
-              activeOpacity={0.7}
-            >
-              <View style={styles.typeOptionHeader}>
-                <Text
-                  style={[
-                    styles.typeOptionLabel,
-                    formData.type === option.key && styles.typeOptionLabelActive,
-                  ]}
-                >
-                  {option.label}
-                </Text>
-                {formData.type === option.key && (
-                  <Ionicons name="checkmark-circle" size={20} color="#2C67FF" />
-                )}
-              </View>
-              <Text style={styles.typeOptionDescription}>{option.description}</Text>
-            </TouchableOpacity>
-          ))}
+        <Text style={styles.sectionTitle}>Room Details</Text>
+          
+          {/* Number of Spots */}
+          <View style={styles.roomFieldRow}>
+            <Text style={styles.roomFieldLabel}>Number of spots</Text>
+            <View style={styles.counterContainer}>
+              <TouchableOpacity
+                style={styles.counterButton}
+                onPress={() => updateFormData({ totalSlots: Math.max(2, formData.totalSlots - 1) })}
+              >
+                <Ionicons name="remove" size={20} color="#111827" />
+              </TouchableOpacity>
+              <Text style={styles.counterValue}>{formData.totalSlots}</Text>
+              <TouchableOpacity
+                style={styles.counterButton}
+                onPress={() => updateFormData({ totalSlots: Math.min(10, formData.totalSlots + 1) })}
+              >
+                <Ionicons name="add" size={20} color="#111827" />
+              </TouchableOpacity>
+            </View>
+          </View>
+          <Text style={styles.roomFieldHint}>
+            This is the total number of people who can commit to this unit
+          </Text>
+
+          {/* Price Per Spot */}
+          <View style={styles.roomInputRow}>
+            <Text style={styles.roomFieldLabel}>Price per spot</Text>
+            <View style={styles.priceInputContainer}>
+              <Text style={styles.currencySymbol}>$</Text>
+              <TextInput
+                style={styles.priceInput}
+                placeholder="0"
+                placeholderTextColor="#9CA3AF"
+                value={formData.pricePerSpot}
+                onChangeText={(text) => updateFormData({ pricePerSpot: text.replace(/[^0-9]/g, '') })}
+                keyboardType="numeric"
+              />
+              <Text style={styles.priceSuffix}>/mo</Text>
+            </View>
+          </View>
+
+          {/* Lease Term */}
+          <View style={styles.roomInputRow}>
+            <Text style={styles.roomFieldLabel}>Lease term</Text>
+            <View style={styles.leaseTermContainer}>
+              <TextInput
+                style={styles.leaseTermInput}
+                placeholder="12"
+                placeholderTextColor="#9CA3AF"
+                value={formData.leaseTermMonths}
+                onChangeText={(text) => updateFormData({ leaseTermMonths: text.replace(/[^0-9]/g, '') })}
+                keyboardType="numeric"
+                maxLength={2}
+              />
+              <Text style={styles.leaseTermSuffix}>months</Text>
+            </View>
+          </View>
+
+          {/* Requirements */}
+          <View style={styles.roomInputRow}>
+            <Text style={styles.roomFieldLabel}>Requirements (optional)</Text>
+            <TextInput
+              style={[styles.input, styles.requirementsInput]}
+              placeholder="e.g., Credit 650+, Income 3x rent, No evictions"
+              placeholderTextColor="#9CA3AF"
+              value={formData.requirementsText}
+              onChangeText={(text) => updateFormData({ requirementsText: text })}
+              multiline
+              numberOfLines={3}
+            />
+          </View>
         </View>
-      </View>
 
       {/* Title */}
       <View style={styles.section}>
@@ -128,47 +173,36 @@ export default function Step1Basics({ formData, updateFormData }: Props) {
         <Text style={styles.charCount}>{formData.title.length}/100</Text>
       </View>
 
-      {/* Location with Google Places Autocomplete */}
+      {/* Location with Google Places Autocomplete or Manual Entry */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Where is your place?</Text>
         
-        {GOOGLE_PLACES_API_KEY ? (
-          <View style={styles.autocompleteContainer}>
-            <GooglePlacesAutocomplete
-              ref={placesRef}
-              placeholder="Search for an address..."
-              onPress={handlePlaceSelect}
-              query={{
-                key: GOOGLE_PLACES_API_KEY,
-                language: 'en',
-                types: 'address',
-                components: 'country:us',
-              }}
-              fetchDetails={true}
-              enablePoweredByContainer={false}
-              debounce={300}
-              minLength={3}
-              styles={{
-                textInputContainer: styles.autocompleteInputContainer,
-                textInput: styles.autocompleteInput,
-                listView: styles.autocompleteList,
-                row: styles.autocompleteRow,
-                description: styles.autocompleteDescription,
-                separator: styles.autocompleteSeparator,
-              }}
-              textInputProps={{
-                placeholderTextColor: '#9CA3AF',
-              }}
-            />
+        {/* Toggle between autocomplete and manual entry */}
+        {GOOGLE_PLACES_API_KEY && (
+          <View style={styles.entryModeToggle}>
+            <TouchableOpacity
+              style={[styles.entryModeButton, !useManualEntry && styles.entryModeButtonActive]}
+              onPress={() => setUseManualEntry(false)}
+            >
+              <Ionicons name="search" size={16} color={!useManualEntry ? '#FFFFFF' : '#6B7280'} />
+              <Text style={[styles.entryModeText, !useManualEntry && styles.entryModeTextActive]}>
+                Search
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.entryModeButton, useManualEntry && styles.entryModeButtonActive]}
+              onPress={() => setUseManualEntry(true)}
+            >
+              <Ionicons name="create-outline" size={16} color={useManualEntry ? '#FFFFFF' : '#6B7280'} />
+              <Text style={[styles.entryModeText, useManualEntry && styles.entryModeTextActive]}>
+                Manual
+              </Text>
+            </TouchableOpacity>
           </View>
-        ) : (
-          <Text style={styles.apiKeyWarning}>
-            Google Places API key not configured. Using manual entry.
-          </Text>
         )}
 
-        {/* Display selected address or manual entry */}
-        {formData.addressLine1 ? (
+        {/* Display selected address if we have one */}
+        {formData.addressLine1 && !useManualEntry ? (
           <View style={styles.selectedAddressContainer}>
             <View style={styles.selectedAddressHeader}>
               <Ionicons name="location" size={20} color="#2C67FF" />
@@ -197,8 +231,147 @@ export default function Step1Basics({ formData, updateFormData }: Props) {
               </Text>
             )}
           </View>
-        ) : !GOOGLE_PLACES_API_KEY ? (
-          // Manual entry fallback
+        ) : useManualEntry ? (
+          // Manual entry mode
+          <>
+            <TextInput
+              style={styles.input}
+              placeholder="Street Address"
+              placeholderTextColor="#9CA3AF"
+              value={formData.addressLine1}
+              onChangeText={(text) => updateFormData({ addressLine1: text })}
+            />
+            <View style={styles.row}>
+              <TextInput
+                style={[styles.input, styles.inputHalf]}
+                placeholder="City"
+                placeholderTextColor="#9CA3AF"
+                value={formData.city}
+                onChangeText={(text) => updateFormData({ city: text })}
+              />
+              <TextInput
+                style={[styles.input, styles.inputQuarter]}
+                placeholder="State"
+                placeholderTextColor="#9CA3AF"
+                value={formData.state}
+                onChangeText={(text) => updateFormData({ state: text.toUpperCase() })}
+                maxLength={2}
+                autoCapitalize="characters"
+              />
+              <TextInput
+                style={[styles.input, styles.inputQuarter]}
+                placeholder="ZIP"
+                placeholderTextColor="#9CA3AF"
+                value={formData.postalCode}
+                onChangeText={(text) => updateFormData({ postalCode: text })}
+                keyboardType="numeric"
+                maxLength={5}
+              />
+            </View>
+            <Text style={styles.manualEntryHint}>
+              Note: Manual addresses won't appear on the map until geocoded
+            </Text>
+          </>
+        ) : GOOGLE_PLACES_API_KEY ? (
+          // Google Places Autocomplete
+          <>
+            <GooglePlacesAutocomplete
+              ref={placesRef}
+              placeholder="Start typing an address..."
+              onPress={handlePlaceSelect}
+              query={{
+                key: GOOGLE_PLACES_API_KEY,
+                language: 'en',
+                types: 'address',
+                components: 'country:us',
+              }}
+              fetchDetails={true}
+              enablePoweredByContainer={false}
+              debounce={200}
+              minLength={3}
+              nearbyPlacesAPI="GooglePlacesSearch"
+              GooglePlacesSearchQuery={{
+                rankby: 'distance',
+              }}
+              filterReverseGeocodingByTypes={['locality', 'administrative_area_level_3']}
+              styles={{
+                container: {
+                  flex: 0,
+                  zIndex: 10,
+                },
+                textInputContainer: {
+                  backgroundColor: 'transparent',
+                  width: '100%',
+                },
+                textInput: {
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  paddingHorizontal: 16,
+                  paddingVertical: 14,
+                  fontSize: 16,
+                  color: '#111827',
+                  borderWidth: 1,
+                  borderColor: '#E5E7EB',
+                  height: 52,
+                },
+                listView: {
+                  backgroundColor: '#FFFFFF',
+                  borderRadius: 12,
+                  marginTop: 8,
+                  borderWidth: 1,
+                  borderColor: '#E5E7EB',
+                  position: 'absolute',
+                  top: 56,
+                  left: 0,
+                  right: 0,
+                  zIndex: 1000,
+                  elevation: 10,
+                  shadowColor: '#000',
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: 0.15,
+                  shadowRadius: 8,
+                },
+                row: {
+                  paddingVertical: 14,
+                  paddingHorizontal: 16,
+                  backgroundColor: '#FFFFFF',
+                },
+                description: {
+                  fontSize: 14,
+                  color: '#111827',
+                },
+                separator: {
+                  height: 1,
+                  backgroundColor: '#F3F4F6',
+                },
+                poweredContainer: {
+                  display: 'none',
+                },
+              }}
+              textInputProps={{
+                placeholderTextColor: '#9CA3AF',
+                returnKeyType: 'search',
+                autoCorrect: false,
+                autoCapitalize: 'none',
+              }}
+              keyboardShouldPersistTaps="handled"
+              listViewDisplayed="auto"
+              renderRow={(data) => (
+                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                  <Ionicons name="location-outline" size={16} color="#6B7280" style={{ marginRight: 10 }} />
+                  <Text style={{ fontSize: 14, color: '#111827', flex: 1 }} numberOfLines={2}>
+                    {data.description}
+                  </Text>
+                </View>
+              )}
+            />
+            <View style={{ height: 60 }} />
+            <Text style={styles.autocompleteHint}>
+              Can't find your address? Tap "Manual" above to enter it yourself
+            </Text>
+          </>
+        ) : (
+          // No API key - show manual entry
           <>
             <TextInput
               style={styles.input}
@@ -235,7 +408,22 @@ export default function Step1Basics({ formData, updateFormData }: Props) {
               />
             </View>
           </>
-        ) : null}
+        )}
+
+        {/* Unit/Apt Number - Always visible when address is entered */}
+        {(formData.addressLine1 || useManualEntry) && (
+          <View style={styles.unitNumberContainer}>
+            <Text style={styles.unitLabel}>Unit / Apt # (optional)</Text>
+            <TextInput
+              style={styles.unitInput}
+              placeholder="e.g., Apt 4B, Unit 201, Suite 100"
+              placeholderTextColor="#9CA3AF"
+              value={formData.unitNumber}
+              onChangeText={(text) => updateFormData({ unitNumber: text })}
+              autoCapitalize="characters"
+            />
+          </View>
+        )}
       </View>
 
       {/* Bottom padding for keyboard */}
@@ -400,5 +588,158 @@ const styles = StyleSheet.create({
     color: '#F59E0B',
     marginBottom: 12,
     fontStyle: 'italic',
+  },
+  entryModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#F3F4F6',
+    borderRadius: 10,
+    padding: 4,
+    marginBottom: 16,
+  },
+  entryModeButton: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    borderRadius: 8,
+    gap: 6,
+  },
+  entryModeButtonActive: {
+    backgroundColor: '#2C67FF',
+  },
+  entryModeText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
+  },
+  entryModeTextActive: {
+    color: '#FFFFFF',
+  },
+  manualEntryHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontStyle: 'italic',
+    marginTop: -4,
+    marginBottom: 8,
+  },
+  autocompleteHint: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    marginTop: 8,
+  },
+  // Room-specific styles
+  roomFieldRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  roomFieldLabel: {
+    fontSize: 15,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  roomFieldHint: {
+    fontSize: 13,
+    color: '#6B7280',
+    marginBottom: 20,
+  },
+  counterContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 4,
+  },
+  counterButton: {
+    width: 40,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterValue: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    minWidth: 40,
+    textAlign: 'center',
+  },
+  roomInputRow: {
+    marginBottom: 16,
+  },
+  priceInputContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+  },
+  currencySymbol: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+  },
+  priceInput: {
+    flex: 1,
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    paddingVertical: 14,
+    paddingHorizontal: 8,
+  },
+  priceSuffix: {
+    fontSize: 14,
+    color: '#6B7280',
+  },
+  leaseTermContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+    paddingHorizontal: 16,
+  },
+  leaseTermInput: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#111827',
+    paddingVertical: 14,
+    minWidth: 50,
+  },
+  leaseTermSuffix: {
+    fontSize: 14,
+    color: '#6B7280',
+    marginLeft: 8,
+  },
+  requirementsInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  // Unit number styles
+  unitNumberContainer: {
+    marginTop: 16,
+  },
+  unitLabel: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#374151',
+    marginBottom: 8,
+  },
+  unitInput: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 12,
+    padding: 16,
+    fontSize: 16,
+    color: '#111827',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
   },
 });

@@ -15,6 +15,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import ListingDetailScreen from '../screens/ListingDetailScreen';
 import NewListingWizard from '../screens/NewListing';
 import ChatScreen from '../screens/ChatScreen';
+import ActiveCommitmentScreen from '../screens/ActiveCommitmentScreen';
 
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -113,11 +114,27 @@ function MainNavigator() {
           }}
         />
         <Stack.Screen
+          name="EditListing"
+          component={NewListingWizard}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
           name="Chat"
           component={ChatScreen}
           options={{
             presentation: 'card',
             animation: 'slide_from_right',
+          }}
+        />
+        <Stack.Screen
+          name="ActiveCommitment"
+          component={ActiveCommitmentScreen}
+          options={{
+            presentation: 'modal',
+            animation: 'slide_from_bottom',
           }}
         />
       </Stack.Navigator>

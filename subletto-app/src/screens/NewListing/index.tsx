@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -11,16 +11,21 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useRoute } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { ListingFormData, initialFormData, AmenityKey } from './types';
+import type { RouteProp } from '@react-navigation/native';
+import { ListingFormData, initialFormData, AmenityKey, listingToFormData } from './types';
 import Step1Basics from './Step1Basics';
 import Step2Details from './Step2Details';
 import Step3DatesAmenities from './Step3DatesAmenities';
 import Step4PhotosDescription from './Step4PhotosDescription';
 import {
   createListingWithImages,
+  updateListingWithImages,
+  fetchListingById,
   CreateListingPayload,
+  UpdateListingPayload,
+  ListingImage,
 } from '../../lib/listingsApi';
 import { useAuthStore } from '../../store/authStore';
 
@@ -28,9 +33,11 @@ type RootStackParamList = {
   MainTabs: undefined;
   ListingDetail: { listingId: string };
   NewListing: undefined;
+  EditListing: { listingId: string };
 };
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+type EditListingRouteProp = RouteProp<RootStackParamList, 'EditListing'>;
 
 const STEPS = [
   { key: 1, title: 'Basics', subtitle: 'Type, title & location' },
@@ -70,10 +77,47 @@ function getCityCoordinates(city: string): { lat: number; lng: number } | null {
 
 export default function NewListingWizard() {
   const navigation = useNavigation<NavigationProp>();
+  const route = useRoute<EditListingRouteProp>();
   const { user } = useAuthStore();
+  
+  // Check if we're in edit mode
+  const listingId = route.params?.listingId;
+  const isEditMode = !!listingId;
+  
   const [currentStep, setCurrentStep] = useState(1);
   const [formData, setFormData] = useState<ListingFormData>(initialFormData);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLoading, setIsLoading] = useState(isEditMode);
+  
+  // Track original images for edit mode (to detect deletions)
+  const [originalImages, setOriginalImages] = useState<ListingImage[]>([]);
+
+  // Fetch existing listing data in edit mode
+  useEffect(() => {
+    if (isEditMode && listingId) {
+      const loadListing = async () => {
+        try {
+          setIsLoading(true);
+          const listing = await fetchListingById(listingId);
+          if (listing) {
+            const convertedFormData = listingToFormData(listing);
+            setFormData(convertedFormData);
+            setOriginalImages(listing.images);
+          } else {
+            Alert.alert('Error', 'Listing not found');
+            navigation.goBack();
+          }
+        } catch (error) {
+          console.error('Error loading listing:', error);
+          Alert.alert('Error', 'Failed to load listing');
+          navigation.goBack();
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      loadListing();
+    }
+  }, [isEditMode, listingId, navigation]);
 
   const updateFormData = (updates: Partial<ListingFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -89,6 +133,17 @@ export default function NewListingWizard() {
         if (!formData.city.trim() || !formData.state.trim()) {
           Alert.alert('Missing Info', 'Please enter the city and state');
           return false;
+        }
+        // Room-specific validation
+        if (formData.type === 'ROOM') {
+          if (!formData.pricePerSpot || parseInt(formData.pricePerSpot) <= 0) {
+            Alert.alert('Missing Info', 'Please enter a price per spot for Room listings');
+            return false;
+          }
+          if (formData.totalSlots < 2) {
+            Alert.alert('Invalid', 'Room listings must have at least 2 spots');
+            return false;
+          }
         }
         return true;
       case 2:
@@ -131,8 +186,10 @@ export default function NewListingWizard() {
 
   const handleClose = () => {
     Alert.alert(
-      'Discard Listing?',
-      'Are you sure you want to discard this listing?',
+      isEditMode ? 'Discard Changes?' : 'Discard Listing?',
+      isEditMode 
+        ? 'Are you sure you want to discard your changes?' 
+        : 'Are you sure you want to discard this listing?',
       [
         { text: 'Keep Editing', style: 'cancel' },
         {
@@ -159,7 +216,7 @@ export default function NewListingWizard() {
     const cityCoords = formData.city ? getCityCoordinates(formData.city) : null;
 
     // Build payload
-    const payload: CreateListingPayload = {
+    const payload: CreateListingPayload | UpdateListingPayload = {
       title: formData.title,
       description: formData.description || undefined,
       type: formData.type,
@@ -169,6 +226,7 @@ export default function NewListingWizard() {
         : 0,
       deposit: formData.deposit ? parseInt(formData.deposit) : 0,
       address_line1: formData.addressLine1 || undefined,
+      unit_number: formData.unitNumber || undefined,
       city: formData.city || undefined,
       state: formData.state || undefined,
       postal_code: formData.postalCode || undefined,
@@ -184,6 +242,15 @@ export default function NewListingWizard() {
       bathrooms: formData.bathrooms,
       furnished: formData.furnished,
       amenities: amenitiesObj,
+      // Room MVP fields
+      total_slots: formData.type === 'ROOM' ? formData.totalSlots : 1,
+      price_per_spot: formData.pricePerSpot 
+        ? parseInt(formData.pricePerSpot) 
+        : undefined,
+      lease_term_months: formData.leaseTermMonths
+        ? parseInt(formData.leaseTermMonths)
+        : undefined,
+      requirements_text: formData.requirementsText || undefined,
     };
 
     // Check if user is authenticated
@@ -216,23 +283,57 @@ export default function NewListingWizard() {
     setIsSubmitting(true);
     try {
       const imageUris = formData.photos.map((p) => p.uri);
-      const listing = await createListingWithImages(payload, user.id, imageUris);
+      
+      if (isEditMode && listingId) {
+        // Edit mode: Update existing listing
+        // Find images that were deleted (in original but not in current photos)
+        const currentUrls = formData.photos.map(p => p.uri);
+        const imagesToDelete = originalImages.filter(
+          img => !currentUrls.includes(img.url)
+        );
+        
+        // Find new images (in current photos but not in original)
+        const originalUrls = originalImages.map(img => img.url);
+        const newImageUris = imageUris.filter(uri => !originalUrls.includes(uri));
+        
+        const listing = await updateListingWithImages(
+          listingId,
+          payload as UpdateListingPayload,
+          newImageUris,
+          originalImages,
+          imagesToDelete
+        );
 
-      Alert.alert('Success!', 'Your listing has been published.', [
-        {
-          text: 'View Listing',
-          onPress: () => {
-            setFormData(initialFormData);
-            setCurrentStep(1);
-            navigation.navigate('ListingDetail', { listingId: listing.id });
+        Alert.alert('Success!', 'Your listing has been updated.', [
+          {
+            text: 'View Listing',
+            onPress: () => {
+              setFormData(initialFormData);
+              setCurrentStep(1);
+              navigation.navigate('ListingDetail', { listingId: listing.id });
+            },
           },
-        },
-      ]);
+        ]);
+      } else {
+        // Create mode: New listing
+        const listing = await createListingWithImages(payload as CreateListingPayload, user.id, imageUris);
+
+        Alert.alert('Success!', 'Your listing has been published.', [
+          {
+            text: 'View Listing',
+            onPress: () => {
+              setFormData(initialFormData);
+              setCurrentStep(1);
+              navigation.navigate('ListingDetail', { listingId: listing.id });
+            },
+          },
+        ]);
+      }
     } catch (error) {
-      console.error('Error creating listing:', error);
+      console.error('Error saving listing:', error);
       Alert.alert(
         'Error',
-        error instanceof Error ? error.message : 'Failed to create listing'
+        error instanceof Error ? error.message : isEditMode ? 'Failed to update listing' : 'Failed to create listing'
       );
     } finally {
       setIsSubmitting(false);
@@ -256,6 +357,18 @@ export default function NewListingWizard() {
 
   const currentStepInfo = STEPS[currentStep - 1];
 
+  // Show loading indicator while fetching listing data in edit mode
+  if (isLoading) {
+    return (
+      <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#2C67FF" />
+          <Text style={styles.loadingText}>Loading listing...</Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safeArea} edges={['top', 'bottom']}>
       <KeyboardAvoidingView 
@@ -274,7 +387,9 @@ export default function NewListingWizard() {
               <Ionicons name="arrow-back" size={24} color="#111827" />
             </TouchableOpacity>
             <View style={styles.headerTextContainer}>
-              <Text style={styles.headerTitle}>{currentStepInfo.title}</Text>
+              <Text style={styles.headerTitle}>
+                {isEditMode ? `Edit: ${currentStepInfo.title}` : currentStepInfo.title}
+              </Text>
               <Text style={styles.headerSubtitle}>{currentStepInfo.subtitle}</Text>
             </View>
             <TouchableOpacity
@@ -326,7 +441,9 @@ export default function NewListingWizard() {
                 <ActivityIndicator color="#FFFFFF" />
               ) : (
                 <Text style={styles.primaryButtonText}>
-                  {currentStep === 4 ? 'Preview & Publish' : 'Continue'}
+                  {currentStep === 4 
+                    ? (isEditMode ? 'Save Changes' : 'Preview & Publish') 
+                    : 'Continue'}
                 </Text>
               )}
             </TouchableOpacity>
@@ -340,7 +457,17 @@ export default function NewListingWizard() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
+  },
+  loadingContainer: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 14,
+    color: '#6B7280',
   },
   keyboardView: {
     flex: 1,

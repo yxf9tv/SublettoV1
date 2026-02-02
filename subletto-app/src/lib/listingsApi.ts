@@ -1,7 +1,8 @@
 import { supabase } from './supabaseClient';
 
 // Type definitions matching the database schema
-export type ListingType = 'SUBLET' | 'TAKEOVER' | 'ROOM';
+// Room is now the only listing type - the app focuses on filling multi-bedroom units one spot at a time
+export type ListingType = 'ROOM';
 
 export interface Listing {
   id: string;
@@ -15,6 +16,7 @@ export interface Listing {
   latitude: number | null;
   longitude: number | null;
   address_line1: string | null;
+  unit_number: string | null;
   city: string | null;
   state: string | null;
   postal_code: string | null;
@@ -27,6 +29,11 @@ export interface Listing {
   is_active: boolean;
   created_at: string;
   updated_at: string;
+  // Room MVP fields
+  total_slots: number;
+  price_per_spot: number | null;
+  lease_term_months: number | null;
+  requirements_text: string | null;
 }
 
 export interface ListingImage {
@@ -49,6 +56,7 @@ export interface ListingFilters {
   maxPrice?: number;
   bedrooms?: number;
   furnished?: boolean;
+  search?: string; // Text search - currently handled client-side
   userId?: string;
   limit?: number;
   offset?: number;
@@ -64,6 +72,7 @@ export interface CreateListingPayload {
   latitude?: number | null;
   longitude?: number | null;
   address_line1?: string | null;
+  unit_number?: string | null;
   city?: string | null;
   state?: string | null;
   postal_code?: string | null;
@@ -73,6 +82,11 @@ export interface CreateListingPayload {
   bathrooms?: number;
   furnished?: boolean;
   amenities?: Record<string, any>;
+  // Room MVP fields
+  total_slots?: number;
+  price_per_spot?: number | null;
+  lease_term_months?: number | null;
+  requirements_text?: string | null;
 }
 
 export interface UpdateListingPayload extends Partial<CreateListingPayload> {
@@ -202,6 +216,8 @@ export async function createListing(
   payload: CreateListingPayload,
   userId: string
 ): Promise<Listing> {
+  const totalSlots = payload.total_slots ?? payload.bedrooms ?? 1;
+  
   const { data, error } = await supabase
     .from('listings')
     .insert({
@@ -214,12 +230,33 @@ export async function createListing(
       furnished: payload.furnished ?? false,
       amenities: payload.amenities ?? {},
       is_active: true,
+      total_slots: totalSlots,
+      price_per_spot: payload.price_per_spot ?? null,
+      lease_term_months: payload.lease_term_months ?? null,
+      requirements_text: payload.requirements_text ?? null,
     })
     .select()
     .single();
 
   if (error) {
     throw new Error(`Failed to create listing: ${error.message}`);
+  }
+
+  // Auto-create room slots for multi-slot listings
+  if (totalSlots > 1) {
+    const slotsToCreate = Array.from({ length: totalSlots }, (_, i) => ({
+      listing_id: data.id,
+      slot_number: i + 1,
+      status: 'available',
+    }));
+
+    const { error: slotsError } = await supabase
+      .from('room_slots')
+      .insert(slotsToCreate);
+
+    if (slotsError) {
+      console.warn('Failed to create room slots:', slotsError.message);
+    }
   }
 
   return data;
@@ -373,20 +410,41 @@ export async function uploadListingImage(
       return imageUri;
     }
 
-    // For local file URIs, fetch and upload
-    const response = await fetch(imageUri);
-    const blob = await response.blob();
+    // For local file URIs, use FormData approach which works reliably on iOS
+    // Create FormData with the file
+    const formData = new FormData();
+    formData.append('file', {
+      uri: imageUri,
+      name: `${timestamp}_${index}.jpg`,
+      type: 'image/jpeg',
+    } as any);
 
-    // Upload to Supabase Storage
-    const { data, error } = await supabase.storage
-      .from('listing-images')
-      .upload(fileName, blob, {
-        contentType: 'image/jpeg',
-        upsert: true,
-      });
+    // Get the Supabase storage URL and auth token
+    const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+    const supabaseKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
+    
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase configuration');
+    }
 
-    if (error) {
-      throw new Error(`Failed to upload image: ${error.message}`);
+    // Get current session for auth
+    const { data: { session } } = await supabase.auth.getSession();
+    const authToken = session?.access_token || supabaseKey;
+
+    // Upload using fetch with FormData
+    const uploadUrl = `${supabaseUrl}/storage/v1/object/listing-images/${fileName}`;
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'x-upsert': 'true',
+      },
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Upload failed: ${response.status} - ${errorText}`);
     }
 
     // Get public URL
@@ -394,11 +452,13 @@ export async function uploadListingImage(
       .from('listing-images')
       .getPublicUrl(fileName);
 
+    console.log('Image uploaded successfully:', urlData.publicUrl);
     return urlData.publicUrl;
   } catch (err) {
     console.error('Error uploading image:', err);
-    // If upload fails, return the original URI (for demo purposes)
-    return imageUri;
+    // Re-throw the error instead of returning local URI
+    // This prevents broken local file paths from being saved to the database
+    throw err;
   }
 }
 
@@ -456,3 +516,97 @@ export async function createListingWithImages(
   };
 }
 
+/**
+ * Delete a listing image from storage and database
+ */
+export async function deleteListingImage(imageId: string, imageUrl: string): Promise<void> {
+  // Delete from database first
+  const { error: dbError } = await supabase
+    .from('listing_images')
+    .delete()
+    .eq('id', imageId);
+
+  if (dbError) {
+    console.warn(`Failed to delete image record: ${dbError.message}`);
+  }
+
+  // Try to delete from storage if it's a Supabase storage URL
+  if (imageUrl.includes('supabase') && imageUrl.includes('listing-images')) {
+    try {
+      // Extract the file path from the URL
+      const urlParts = imageUrl.split('/listing-images/');
+      if (urlParts.length > 1) {
+        const filePath = urlParts[1];
+        const { error: storageError } = await supabase.storage
+          .from('listing-images')
+          .remove([filePath]);
+
+        if (storageError) {
+          console.warn(`Failed to delete image from storage: ${storageError.message}`);
+        }
+      }
+    } catch (err) {
+      console.warn('Error deleting image from storage:', err);
+    }
+  }
+}
+
+/**
+ * Update a listing with images (handles adding new and removing deleted images)
+ */
+export async function updateListingWithImages(
+  listingId: string,
+  payload: UpdateListingPayload,
+  newImageUris: string[],
+  existingImages: ListingImage[],
+  imagesToDelete: ListingImage[]
+): Promise<ListingWithImages> {
+  // 1. Update the listing record
+  const listing = await updateListing(listingId, payload);
+
+  // 2. Delete removed images
+  for (const image of imagesToDelete) {
+    try {
+      await deleteListingImage(image.id, image.url);
+    } catch (err) {
+      console.error(`Failed to delete image ${image.id}:`, err);
+    }
+  }
+
+  // 3. Upload new images (those that don't already exist)
+  const images: ListingImage[] = [...existingImages.filter(
+    img => !imagesToDelete.some(del => del.id === img.id)
+  )];
+  
+  // Calculate the starting sort order for new images
+  const maxSortOrder = images.length > 0 
+    ? Math.max(...images.map(img => img.sort_order)) + 1 
+    : 0;
+
+  for (let i = 0; i < newImageUris.length; i++) {
+    const uri = newImageUris[i];
+    // Skip if this URI is already in existing images
+    if (existingImages.some(img => img.url === uri)) {
+      continue;
+    }
+    
+    try {
+      const uploadedUrl = await uploadListingImage(listingId, uri, maxSortOrder + i);
+      await addListingImage(listingId, uploadedUrl, maxSortOrder + i);
+      images.push({
+        id: `temp-${i}`,
+        listing_id: listingId,
+        url: uploadedUrl,
+        sort_order: maxSortOrder + i,
+        created_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      console.error(`Failed to upload new image ${i}:`, err);
+    }
+  }
+
+  return {
+    ...listing,
+    images,
+  };
+}

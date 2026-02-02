@@ -97,18 +97,8 @@ export default function MapScreen() {
     return `$${price.toLocaleString()}`;
   };
 
-  const formatListingType = (type: string) => {
-    switch (type) {
-      case 'SUBLET':
-        return 'Sublet';
-      case 'TAKEOVER':
-        return 'Takeover';
-      case 'ROOM':
-        return 'Room';
-      default:
-        return type;
-    }
-  };
+  // All listings are Room type now
+  const formatListingType = () => 'Room';
 
   return (
     <SafeAreaView style={styles.safeArea} edges={['top']}>
@@ -121,7 +111,7 @@ export default function MapScreen() {
             color="#9BA3AF"
             style={styles.searchIcon}
           />
-          <Text style={styles.searchText}>Search in Charlottesville, VA</Text>
+          <Text style={styles.searchText}>Search for rooms near you...</Text>
         </View>
 
         {/* Map */}
@@ -242,7 +232,7 @@ export default function MapScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
   },
   container: {
     flex: 1,

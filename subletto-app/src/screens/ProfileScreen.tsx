@@ -16,21 +16,30 @@ import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAuthStore, Profile } from '../store/authStore';
 import { fetchListings, ListingWithImages, getSavedListings } from '../lib/listingsApi';
+import { getSlotSummariesForListings, getActiveCommitmentsForListing } from '../lib/roomApi';
+import RoomProgressBadge from '../components/RoomProgressBadge';
+import { formatTimeRemaining } from '../constants/room';
 import { colors } from '../theme';
 
 type RootStackParamList = {
   MainTabs: undefined;
   ListingDetail: { listingId: string };
+  ActiveCommitment: undefined;
 };
 
 type NavigationProp = NativeStackNavigationProp<RootStackParamList>;
+
+interface ListingWithSlotData extends ListingWithImages {
+  slotSummary?: { filled: number; total: number };
+  activeCommitments?: { userId: string; name: string | null; expiresAt: string }[];
+}
 
 export default function ProfileScreen() {
   const navigation = useNavigation<NavigationProp>();
   const { user, profile, signOut, isLoading: authLoading } = useAuthStore();
 
   const [activeTab, setActiveTab] = useState<'listings' | 'saved'>('listings');
-  const [myListings, setMyListings] = useState<ListingWithImages[]>([]);
+  const [myListings, setMyListings] = useState<ListingWithSlotData[]>([]);
   const [savedListings, setSavedListings] = useState<ListingWithImages[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -43,7 +52,40 @@ export default function ProfileScreen() {
 
       // Fetch my listings
       const listings = await fetchListings({ userId: user.id });
-      setMyListings(listings);
+      
+      // Fetch slot summaries for Room listings
+      const listingIds = listings.map(l => l.id);
+      const slotSummaries = await getSlotSummariesForListings(listingIds);
+      
+      // Enrich listings with slot data and active commitments
+      const enrichedListings: ListingWithSlotData[] = await Promise.all(
+        listings.map(async (listing) => {
+          const slotSummary = slotSummaries.get(listing.id);
+          let activeCommitments: { userId: string; name: string | null; expiresAt: string }[] = [];
+          
+          // Fetch active commitments for Room listings
+          if ((listing as any).total_slots > 1) {
+            try {
+              const commitments = await getActiveCommitmentsForListing(listing.id);
+              activeCommitments = commitments.map(c => ({
+                userId: c.user_id,
+                name: (c as any).user?.name || null,
+                expiresAt: c.expires_at,
+              }));
+            } catch (err) {
+              console.warn('Failed to fetch commitments for listing:', listing.id);
+            }
+          }
+          
+          return {
+            ...listing,
+            slotSummary,
+            activeCommitments,
+          };
+        })
+      );
+      
+      setMyListings(enrichedListings);
 
       // Fetch saved listings
       const saved = await getSavedListings(user.id);
@@ -88,11 +130,14 @@ export default function ProfileScreen() {
       .slice(0, 2);
   };
 
-  const renderListingCard = (listing: ListingWithImages) => {
+  const renderListingCard = (listing: ListingWithSlotData | ListingWithImages, isMyListing: boolean = false) => {
     const imageUrl =
       listing.images.length > 0
         ? listing.images[0].url
         : 'https://via.placeholder.com/200?text=No+Image';
+
+    const slotData = isMyListing ? (listing as ListingWithSlotData) : null;
+    const hasSlots = slotData?.slotSummary && slotData.slotSummary.total > 1;
 
     return (
       <TouchableOpacity
@@ -101,7 +146,18 @@ export default function ProfileScreen() {
         onPress={() => navigation.navigate('ListingDetail', { listingId: listing.id })}
         activeOpacity={0.8}
       >
-        <Image source={{ uri: imageUrl }} style={styles.listingImage} />
+        <View style={styles.listingImageContainer}>
+          <Image source={{ uri: imageUrl }} style={styles.listingImage} />
+          {hasSlots && slotData?.slotSummary && (
+            <View style={styles.cardBadgeContainer}>
+              <RoomProgressBadge
+                filled={slotData.slotSummary.filled}
+                total={slotData.slotSummary.total}
+                size="small"
+              />
+            </View>
+          )}
+        </View>
         <View style={styles.listingInfo}>
           <Text style={styles.listingTitle} numberOfLines={1}>
             {listing.title}
@@ -113,6 +169,19 @@ export default function ProfileScreen() {
           <Text style={styles.listingLocation} numberOfLines={1}>
             {listing.city}, {listing.state}
           </Text>
+          {/* Show active commitments for Room listings */}
+          {hasSlots && slotData?.activeCommitments && slotData.activeCommitments.length > 0 && (
+            <View style={styles.commitmentsContainer}>
+              <Text style={styles.commitmentsLabel}>
+                {slotData.activeCommitments.length} active lock{slotData.activeCommitments.length > 1 ? 's' : ''}
+              </Text>
+              {slotData.activeCommitments.slice(0, 2).map((c, idx) => (
+                <Text key={idx} style={styles.commitmentItem} numberOfLines={1}>
+                  {c.name || 'User'} • {formatTimeRemaining(c.expiresAt)}
+                </Text>
+              ))}
+            </View>
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -248,7 +317,9 @@ export default function ProfileScreen() {
             </View>
           ) : (
             <View style={styles.listingsGrid}>
-              {displayListings.map(renderListingCard)}
+              {activeTab === 'listings'
+                ? myListings.map((listing) => renderListingCard(listing, true))
+                : savedListings.map((listing) => renderListingCard(listing, false))}
             </View>
           )}
         </View>
@@ -473,10 +544,18 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
     elevation: 2,
   },
+  listingImageContainer: {
+    position: 'relative',
+  },
   listingImage: {
     width: '100%',
     height: 100,
     backgroundColor: '#E5E7EB',
+  },
+  cardBadgeContainer: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
   },
   listingInfo: {
     padding: 10,
@@ -501,6 +580,23 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: '#9CA3AF',
     marginTop: 2,
+  },
+  commitmentsContainer: {
+    marginTop: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: '#F3F4F6',
+  },
+  commitmentsLabel: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#10B981',
+    marginBottom: 4,
+  },
+  commitmentItem: {
+    fontSize: 10,
+    color: '#6B7280',
+    marginBottom: 2,
   },
   signOutButton: {
     flexDirection: 'row',

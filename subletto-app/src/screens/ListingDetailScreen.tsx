@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import {
   View,
   Text,
@@ -13,11 +13,24 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useRoute, useNavigation } from '@react-navigation/native';
+import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { fetchListingById, ListingWithImages } from '../lib/listingsApi';
 import { getOrCreateChat } from '../lib/messagesApi';
+import {
+  getSlotCounts,
+  expressInterest,
+  removeInterest,
+  checkUserInterest,
+  createCommitment,
+  cancelCommitment,
+  getActiveCommitment,
+} from '../lib/roomApi';
+import { formatProgress, formatSpotsLeft, LOCK_DURATION_HOURS } from '../constants/room';
+import RoomProgressBadge from '../components/RoomProgressBadge';
+import RoomSlotsModule from '../components/RoomSlotsModule';
+import CommitModal from '../components/CommitModal';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme';
 
@@ -25,6 +38,8 @@ type RootStackParamList = {
   MainTabs: undefined;
   ListingDetail: { listingId: string };
   Chat: { chatId: string };
+  EditListing: { listingId: string };
+  ActiveCommitment: undefined;
 };
 
 type ListingDetailRouteProp = RouteProp<RootStackParamList, 'ListingDetail'>;
@@ -44,28 +59,60 @@ export default function ListingDetailScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [saved, setSaved] = useState(false);
   const [messagingLoading, setMessagingLoading] = useState(false);
+  
+  // Room MVP state
+  const [slotCounts, setSlotCounts] = useState({ total: 0, available: 0, locked: 0, filled: 0 });
+  const [isInterested, setIsInterested] = useState(false);
+  const [interestLoading, setInterestLoading] = useState(false);
+  const [commitModalVisible, setCommitModalVisible] = useState(false);
+  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
+  const [slotRefreshTrigger, setSlotRefreshTrigger] = useState(0);
 
-  useEffect(() => {
-    const loadListing = async () => {
-      try {
-        setLoading(true);
-        setError(null);
-        const data = await fetchListingById(listingId);
-        if (!data) {
-          setError('Listing not found');
-          return;
+  // Use useFocusEffect to refetch listing data when returning from edit screen
+  useFocusEffect(
+    useCallback(() => {
+      const loadListing = async () => {
+        try {
+          setLoading(true);
+          setError(null);
+          setCurrentImageIndex(0); // Reset image index when refetching
+          const data = await fetchListingById(listingId);
+          if (!data) {
+            setError('Listing not found');
+            return;
+          }
+          setListing(data);
+          
+          // Load slot counts for Room listings
+          if ((data as any).total_slots > 1) {
+            try {
+              const counts = await getSlotCounts(listingId);
+              setSlotCounts(counts);
+            } catch (err) {
+              console.warn('Failed to load slot counts:', err);
+            }
+          }
+          
+          // Check if user is interested in this listing
+          if (user?.id) {
+            try {
+              const interested = await checkUserInterest(user.id, listingId);
+              setIsInterested(interested);
+            } catch (err) {
+              console.warn('Failed to check interest status:', err);
+            }
+          }
+        } catch (err) {
+          setError(err instanceof Error ? err.message : 'Failed to load listing');
+          console.error('Error fetching listing:', err);
+        } finally {
+          setLoading(false);
         }
-        setListing(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to load listing');
-        console.error('Error fetching listing:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+      };
 
-    loadListing();
-  }, [listingId]);
+      loadListing();
+    }, [listingId, user?.id])
+  );
 
   const handleSave = () => {
     // TODO: Implement save functionality when auth is ready
@@ -97,6 +144,114 @@ export default function ListingDetailScreen() {
       setMessagingLoading(false);
     }
   };
+
+  const handleEdit = () => {
+    if (!listing) return;
+    navigation.navigate('EditListing', { listingId: listing.id });
+  };
+
+  // Room MVP handlers
+  const handleInterestToggle = async () => {
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to express interest.');
+      return;
+    }
+    
+    setInterestLoading(true);
+    try {
+      if (isInterested) {
+        await removeInterest(user.id, listingId);
+        setIsInterested(false);
+      } else {
+        await expressInterest(user.id, listingId);
+        setIsInterested(true);
+      }
+    } catch (err) {
+      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update interest');
+    } finally {
+      setInterestLoading(false);
+    }
+  };
+
+  const handleCommitStart = async (slotId: string) => {
+    if (!user?.id) {
+      Alert.alert('Sign In Required', 'Please sign in to commit to a spot.');
+      return;
+    }
+    
+    // Check if user already has an active commitment
+    try {
+      const existing = await getActiveCommitment(user.id);
+      if (existing) {
+        Alert.alert(
+          'Active Commitment',
+          'You already have an active commitment. Would you like to view it?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'View', onPress: () => navigation.navigate('ActiveCommitment') },
+          ]
+        );
+        return;
+      }
+    } catch (err) {
+      // No existing commitment, proceed
+    }
+    
+    setSelectedSlotId(slotId);
+    setCommitModalVisible(true);
+  };
+
+  const handleCommitConfirm = async (checklistAnswers: Record<string, boolean>) => {
+    if (!user?.id || !selectedSlotId || !listing) {
+      throw new Error('Missing required data');
+    }
+    
+    await createCommitment(user.id, listingId, selectedSlotId, checklistAnswers);
+    
+    // Refresh slot counts and slots module
+    setSlotRefreshTrigger((prev) => prev + 1);
+    const counts = await getSlotCounts(listingId);
+    setSlotCounts(counts);
+    
+    // Navigate to active commitment screen
+    navigation.navigate('ActiveCommitment');
+  };
+
+  const handleCancelCommitment = async (slotId: string) => {
+    if (!user?.id) return;
+    
+    Alert.alert(
+      'Cancel Commitment',
+      'Are you sure you want to release this spot? Someone else may take it.',
+      [
+        { text: 'Keep Spot', style: 'cancel' },
+        {
+          text: 'Release',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              const active = await getActiveCommitment(user.id);
+              if (active) {
+                await cancelCommitment(active.id);
+                setSlotRefreshTrigger((prev) => prev + 1);
+                const counts = await getSlotCounts(listingId);
+                setSlotCounts(counts);
+              }
+            } catch (err) {
+              Alert.alert('Error', 'Failed to cancel commitment');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  // Check if current user is the owner of this listing
+  const isOwner = user?.id && listing?.user_id === user.id;
+  
+  // Check if this is a multi-slot Room listing
+  const isRoomListing = listing && (listing as any).total_slots > 1;
+  const filledSlots = slotCounts.locked + slotCounts.filled;
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Not specified';
@@ -260,6 +415,71 @@ export default function ListingDetailScreen() {
             )}
           </View>
 
+          {/* Room MVP: Momentum Strip */}
+          {isRoomListing && (
+            <View style={styles.momentumStrip}>
+              <View style={styles.momentumLeft}>
+                <RoomProgressBadge
+                  filled={filledSlots}
+                  total={slotCounts.total}
+                  size="large"
+                />
+                <Text style={styles.momentumText}>
+                  {formatSpotsLeft(filledSlots, slotCounts.total)}
+                </Text>
+              </View>
+              <View style={styles.momentumRight}>
+                <Ionicons name="time-outline" size={16} color="#6B7280" />
+                <Text style={styles.momentumHint}>
+                  Locks last {LOCK_DURATION_HOURS}h
+                </Text>
+              </View>
+            </View>
+          )}
+
+          {/* Room MVP: Interest Button */}
+          {isRoomListing && !isOwner && (
+            <TouchableOpacity
+              style={[
+                styles.interestButton,
+                isInterested && styles.interestButtonActive,
+              ]}
+              onPress={handleInterestToggle}
+              disabled={interestLoading}
+            >
+              {interestLoading ? (
+                <ActivityIndicator size="small" color={isInterested ? '#FFFFFF' : '#2C67FF'} />
+              ) : (
+                <>
+                  <Ionicons
+                    name={isInterested ? 'heart' : 'heart-outline'}
+                    size={20}
+                    color={isInterested ? '#FFFFFF' : '#2C67FF'}
+                  />
+                  <Text
+                    style={[
+                      styles.interestButtonText,
+                      isInterested && styles.interestButtonTextActive,
+                    ]}
+                  >
+                    {isInterested ? "I'm interested" : 'Express Interest'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
+          {/* Room MVP: Slots Module */}
+          {isRoomListing && !isOwner && (
+            <RoomSlotsModule
+              listingId={listingId}
+              currentUserId={user?.id || null}
+              onCommit={handleCommitStart}
+              onCancel={handleCancelCommitment}
+              refreshTrigger={slotRefreshTrigger}
+            />
+          )}
+
           {/* Dates */}
           {(listing.start_date || listing.end_date) && (
             <View style={styles.section}>
@@ -340,41 +560,75 @@ export default function ListingDetailScreen() {
 
       {/* Action Buttons */}
       <View style={styles.actionBar}>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.saveButton]}
-          onPress={handleSave}
-        >
-          <Ionicons
-            name={saved ? 'heart' : 'heart-outline'}
-            size={20}
-            color={saved ? '#FFFFFF' : '#111827'}
-          />
-          <Text
-            style={[
-              styles.actionButtonText,
-              saved && styles.actionButtonTextActive,
-            ]}
+        {isOwner ? (
+          // Owner view: Edit button only
+          <TouchableOpacity
+            style={[styles.actionButton, styles.editButton]}
+            onPress={handleEdit}
           >
-            {saved ? 'Saved' : 'Save'}
-          </Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.actionButton, styles.messageButton]}
-          onPress={handleMessage}
-          disabled={messagingLoading}
-        >
-          {messagingLoading ? (
-            <ActivityIndicator size="small" color="#FFFFFF" />
-          ) : (
-            <>
-              <Ionicons name="chatbubble-ellipses-outline" size={20} color="#FFFFFF" />
-              <Text style={[styles.actionButtonText, styles.messageButtonText]}>
-                Message Lister
+            <Ionicons name="create-outline" size={20} color="#FFFFFF" />
+            <Text style={[styles.actionButtonText, styles.editButtonText]}>
+              Edit Listing
+            </Text>
+          </TouchableOpacity>
+        ) : (
+          // Visitor view: Save and Message buttons
+          <>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.saveButton]}
+              onPress={handleSave}
+            >
+              <Ionicons
+                name={saved ? 'heart' : 'heart-outline'}
+                size={20}
+                color={saved ? '#FFFFFF' : '#111827'}
+              />
+              <Text
+                style={[
+                  styles.actionButtonText,
+                  saved && styles.actionButtonTextActive,
+                ]}
+              >
+                {saved ? 'Saved' : 'Save'}
               </Text>
-            </>
-          )}
-        </TouchableOpacity>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.actionButton, styles.messageButton]}
+              onPress={handleMessage}
+              disabled={messagingLoading}
+            >
+              {messagingLoading ? (
+                <ActivityIndicator size="small" color="#FFFFFF" />
+              ) : (
+                <>
+                  <Ionicons name="chatbubble-ellipses-outline" size={20} color="#FFFFFF" />
+                  <Text style={[styles.actionButtonText, styles.messageButtonText]}>
+                    Message Lister
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+          </>
+        )}
       </View>
+
+      {/* Room MVP: Commit Modal */}
+      {listing && (
+        <CommitModal
+          visible={commitModalVisible}
+          onClose={() => {
+            setCommitModalVisible(false);
+            setSelectedSlotId(null);
+          }}
+          onConfirm={handleCommitConfirm}
+          listingTitle={listing.title}
+          pricePerSpot={(listing as any).price_per_spot || listing.price_monthly}
+          leaseTermMonths={(listing as any).lease_term_months}
+          startDate={listing.start_date}
+          utilitiesIncluded={listing.utilities_monthly === 0}
+          requirementsText={(listing as any).requirements_text}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -382,7 +636,7 @@ export default function ListingDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#F3F4F6',
+    backgroundColor: '#FFFFFF',
   },
   scroll: {
     flex: 1,
@@ -404,6 +658,17 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     paddingVertical: 60,
     paddingHorizontal: 32,
+  },
+  backButton: {
+    position: 'absolute',
+    top: 16,
+    left: 16,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#F3F4F6',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   errorText: {
     marginTop: 16,
@@ -641,6 +906,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#111827',
     flex: 2,
   },
+  editButton: {
+    backgroundColor: '#2C67FF',
+    flex: 1,
+  },
+  editButtonText: {
+    color: '#FFFFFF',
+  },
   actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
@@ -650,6 +922,61 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
   },
   messageButtonText: {
+    color: '#FFFFFF',
+  },
+  // Room MVP styles
+  momentumStrip: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#F0F9FF',
+    padding: 16,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#BAE6FD',
+  },
+  momentumLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  momentumText: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0369A1',
+  },
+  momentumRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  momentumHint: {
+    fontSize: 13,
+    color: '#6B7280',
+  },
+  interestButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#EFF6FF',
+    paddingVertical: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 2,
+    borderColor: '#2C67FF',
+    gap: 8,
+  },
+  interestButtonActive: {
+    backgroundColor: '#2C67FF',
+    borderColor: '#2C67FF',
+  },
+  interestButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#2C67FF',
+  },
+  interestButtonTextActive: {
     color: '#FFFFFF',
   },
 });

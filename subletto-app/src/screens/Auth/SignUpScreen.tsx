@@ -93,7 +93,7 @@ export default function SignUpScreen() {
           <View style={styles.header}>
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>
-              Join Subletto to find or list your perfect place
+              Join Room to find your perfect roommates
             </Text>
           </View>
 
