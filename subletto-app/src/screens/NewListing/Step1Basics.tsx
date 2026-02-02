@@ -86,33 +86,10 @@ export default function Step1Basics({ formData, updateFormData }: Props) {
       {/* Room Details - Always visible since Room is the only listing type */}
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Room Details</Text>
-          
-          {/* Number of Spots */}
-          <View style={styles.roomFieldRow}>
-            <Text style={styles.roomFieldLabel}>Number of spots</Text>
-            <View style={styles.counterContainer}>
-              <TouchableOpacity
-                style={styles.counterButton}
-                onPress={() => updateFormData({ totalSlots: Math.max(2, formData.totalSlots - 1) })}
-              >
-                <Ionicons name="remove" size={20} color="#111827" />
-              </TouchableOpacity>
-              <Text style={styles.counterValue}>{formData.totalSlots}</Text>
-              <TouchableOpacity
-                style={styles.counterButton}
-                onPress={() => updateFormData({ totalSlots: Math.min(10, formData.totalSlots + 1) })}
-              >
-                <Ionicons name="add" size={20} color="#111827" />
-              </TouchableOpacity>
-            </View>
-          </View>
-          <Text style={styles.roomFieldHint}>
-            This is the total number of people who can commit to this unit
-          </Text>
 
-          {/* Price Per Spot */}
+          {/* Monthly Rent */}
           <View style={styles.roomInputRow}>
-            <Text style={styles.roomFieldLabel}>Price per spot</Text>
+            <Text style={styles.roomFieldLabel}>Monthly Rent</Text>
             <View style={styles.priceInputContainer}>
               <Text style={styles.currencySymbol}>$</Text>
               <TextInput

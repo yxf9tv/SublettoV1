@@ -15,7 +15,8 @@ import ProfileScreen from '../screens/ProfileScreen';
 import ListingDetailScreen from '../screens/ListingDetailScreen';
 import NewListingWizard from '../screens/NewListing';
 import ChatScreen from '../screens/ChatScreen';
-import ActiveCommitmentScreen from '../screens/ActiveCommitmentScreen';
+import CheckoutScreen from '../screens/CheckoutScreen';
+import BookingConfirmationScreen from '../screens/BookingConfirmationScreen';
 
 // Auth Screens
 import LoginScreen from '../screens/Auth/LoginScreen';
@@ -130,11 +131,19 @@ function MainNavigator() {
           }}
         />
         <Stack.Screen
-          name="ActiveCommitment"
-          component={ActiveCommitmentScreen}
+          name="Checkout"
+          component={CheckoutScreen}
           options={{
             presentation: 'modal',
             animation: 'slide_from_bottom',
+          }}
+        />
+        <Stack.Screen
+          name="BookingConfirmation"
+          component={BookingConfirmationScreen}
+          options={{
+            presentation: 'modal',
+            animation: 'fade',
           }}
         />
       </Stack.Navigator>
@@ -152,7 +161,7 @@ export default function AppNavigator() {
   if (isLoading) {
     return (
       <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.accentBlue} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }

@@ -17,7 +17,7 @@ import {
   ListingWithImages,
   ListingFilters,
 } from '../lib/listingsApi';
-import { getSlotSummariesForListings } from '../lib/roomApi';
+import { cleanupExpiredSessions, ListingStatus } from '../lib/checkoutApi';
 import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import FilterModal from '../components/FilterModal';
@@ -52,32 +52,26 @@ type Listing = {
   imageUrls: string[];
   bedrooms: number;
   bathrooms: number;
-  // Room MVP slot data
-  totalSlots: number;
-  filledSlots: number;
+  // Availability status
+  status: ListingStatus;
 };
 
 // Helper function to map API listing to UI listing format
-function mapApiListingToUIListing(
-  apiListing: ListingWithImages,
-  slotSummary?: { filled: number; total: number }
-): Listing {
+function mapApiListingToUIListing(apiListing: ListingWithImages): Listing {
   return {
     id: apiListing.id,
     title: apiListing.title,
     address: apiListing.address_line1 || '',
     city: apiListing.city || '',
     state: apiListing.state || '',
-    price: Number(apiListing.price_monthly),
+    price: (apiListing as any).price_per_spot || Number(apiListing.price_monthly),
     priceLabel: ' /month',
     rating: 4.5, // Default rating - can be added to schema later
     distanceKm: 0, // Default distance - can be calculated later
     imageUrls: apiListing.images.map((img) => img.url),
     bedrooms: apiListing.bedrooms,
     bathrooms: Number(apiListing.bathrooms),
-    // Use slot summary if available, otherwise fall back to bedrooms as total_slots
-    totalSlots: slotSummary?.total ?? (apiListing as any).total_slots ?? apiListing.bedrooms ?? 1,
-    filledSlots: slotSummary?.filled ?? 0,
+    status: (apiListing as any).status || 'AVAILABLE',
   };
 }
 
@@ -391,6 +385,9 @@ const HomeScreen: React.FC = () => {
       setLoading(true);
       setError(null);
 
+      // Clean up any expired checkout sessions first
+      await cleanupExpiredSessions();
+
       // Build API filter object
       const apiFilters: ListingFilters = {
         type: 'ROOM',
@@ -419,13 +416,7 @@ const HomeScreen: React.FC = () => {
         );
       }
 
-      // Fetch slot summaries for filtered listings
-      const listingIds = filteredListings.map(l => l.id);
-      const slotSummaries = await getSlotSummariesForListings(listingIds);
-
-      const uiListings = filteredListings.map(listing =>
-        mapApiListingToUIListing(listing, slotSummaries.get(listing.id))
-      );
+      const uiListings = filteredListings.map(listing => mapApiListingToUIListing(listing));
       setListings(uiListings);
       console.log('🏠 HomeScreen: Set', uiListings.length, 'UI listings');
     } catch (err) {
@@ -661,27 +652,34 @@ const ListingCard: React.FC<{
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentImageIndex]);
 
-  // Calculate spots left (totalSlots is based on bedrooms)
-  const spotsLeft = listing.totalSlots - listing.filledSlots;
+  const isAvailable = listing.status === 'AVAILABLE';
 
   return (
-    <TouchableOpacity style={styles.card} onPress={onPress} activeOpacity={0.95}>
+    <TouchableOpacity 
+      style={[styles.card, !isAvailable && styles.cardUnavailable]} 
+      onPress={onPress} 
+      activeOpacity={0.95}
+    >
       {/* White Top Banner */}
       <View style={styles.topBanner}>
-        <View style={styles.recommendedBadge}>
-          <Ionicons name="checkmark-circle" size={12} color="#10B981" />
-          <Text style={styles.recommendedText}>Recommended</Text>
-        </View>
-        <View style={{ flex: 1 }} />
-        {listing.totalSlots > 1 && (
-          <View style={[
-            styles.spotsBadge,
-            spotsLeft === 0 && styles.spotsBadgeFull,
-          ]}>
-            <Text style={styles.spotsNumber}>{spotsLeft}</Text>
-            <Text style={styles.spotsTotal}>/{listing.totalSlots}</Text>
+        {isAvailable ? (
+          <View style={styles.recommendedBadge}>
+            <Ionicons name="checkmark-circle" size={12} color="#10B981" />
+            <Text style={styles.recommendedText}>Available</Text>
+          </View>
+        ) : (
+          <View style={styles.bookedBadge}>
+            <Ionicons 
+              name={listing.status === 'BOOKED' ? 'checkmark-circle' : 'time'} 
+              size={12} 
+              color="#DC2626" 
+            />
+            <Text style={styles.bookedText}>
+              {listing.status === 'BOOKED' ? 'Booked' : 'In Checkout'}
+            </Text>
           </View>
         )}
+        <View style={{ flex: 1 }} />
       </View>
 
       {/* Image Container */}
@@ -911,26 +909,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     color: '#059669',
   },
-  spotsBadge: {
+  bookedBadge: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#111827',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    backgroundColor: '#FEE2E2',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 20,
+    gap: 4,
   },
-  spotsBadgeFull: {
-    backgroundColor: '#6B7280',
+  bookedText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#DC2626',
   },
-  spotsNumber: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
-  },
-  spotsTotal: {
-    fontSize: 16,
-    fontWeight: '700',
-    color: '#FFFFFF',
+  cardUnavailable: {
+    opacity: 0.7,
   },
   // Image
   cardImageContainer: {

@@ -65,6 +65,9 @@ coverage/
 # Supabase
 .supabase/
 
+# MCP config (contains secrets)
+.mcp.json
+
 # Temporary files
 tmp/
 temp/

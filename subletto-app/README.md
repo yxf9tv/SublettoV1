@@ -1,13 +1,13 @@
-# subletto-app
+# Room App
 
-Expo React Native app for Subletto – The Lease Marketplace.
+Expo React Native app for Room – Find Your Perfect Roommates.
 
 ## Tech Stack
 
-- **Expo SDK 54** (`expo@^54.0.25`)
-- **React Native 0.81.5** (`react-native@0.81.5`)
-- **React 19.1.0** (`react@19.1.0`)
-- **TypeScript 5.3.3** (`typescript@^5.3.3`)
+- **Expo SDK 54**
+- **React Native 0.81.5**
+- **React 19.1.0**
+- **TypeScript 5.3.3**
 - **React Navigation 6** for navigation
 - **Zustand 4.5.0** for state management
 - **react-native-maps 1.20.1** for map functionality
@@ -28,6 +28,13 @@ Expo React Native app for Subletto – The Lease Marketplace.
 npm install
 ```
 
+2. Create `.env` file with your credentials:
+```bash
+EXPO_PUBLIC_SUPABASE_URL=your_supabase_project_url
+EXPO_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+EXPO_PUBLIC_GOOGLE_MAPS_API_KEY=your_google_maps_key
+```
+
 ### Running the App
 
 Start the Expo development server:
@@ -42,47 +49,61 @@ npm run android  # Android emulator
 npm run web      # Web browser
 ```
 
-### iOS Preview
+## Key Features
 
-The app is configured for iOS preview with:
-- **Bundle Identifier**: `com.subletto.app`
-- **Supports iPad**: Yes
-- **Expo SDK 54** compatibility ensures proper iOS simulator support
-- Requires **Xcode** (macOS only) for iOS simulator
-- For physical devices, use **Expo Go** app to scan QR code
+- **Browse Rooms** - Discover available rooms with photos and details
+- **Map View** - See rooms on an interactive map
+- **Airbnb-style Checkout** - 15-minute booking window prevents double-booking
+- **Post Listings** - Create detailed room listings with photos
+- **Messaging** - Chat with hosts and renters
+- **Profile** - Manage your listings and settings
 
-To run on iOS simulator:
-1. Ensure Xcode is installed on macOS
-2. Run `npm run ios` or `npx expo start --ios`
-3. The iOS simulator will launch automatically
-
-### Development
-
-- The app uses TypeScript for type safety
-- ESLint and Prettier are configured for code quality
-- Main entry point: `App.tsx`
-- Source code is organized in `src/` directory
-
-### Key Dependencies
-
-- **Navigation**: `@react-navigation/native`, `@react-navigation/bottom-tabs`, `@react-navigation/native-stack`
-- **State Management**: `zustand@^4.5.0`
-- **Maps**: `react-native-maps@^1.20.1`
-- **Icons**: `@expo/vector-icons@^15.0.3`
-- **Fonts**: `@expo-google-fonts/poppins@^0.2.3`
-- **UI Components**: `react-native-safe-area-context@~5.6.0`, `react-native-screens@~4.16.0`
-
-### Project Structure
+## Project Structure
 
 ```
 subletto-app/
-├── App.tsx           # Root component
-├── app.json          # Expo configuration
-├── package.json      # Dependencies and scripts
-├── tsconfig.json     # TypeScript configuration
-├── babel.config.js   # Babel configuration
-├── assets/           # Images, fonts, etc.
-└── src/              # Source code (to be created)
+├── App.tsx              # Root component
+├── app.json             # Expo configuration
+├── package.json         # Dependencies
+├── tsconfig.json        # TypeScript config
+└── src/
+    ├── screens/         # App screens
+    │   ├── HomeScreen.tsx
+    │   ├── MapScreen.tsx
+    │   ├── ListingDetailScreen.tsx
+    │   ├── CheckoutScreen.tsx
+    │   ├── BookingConfirmationScreen.tsx
+    │   ├── NewListing/
+    │   ├── Auth/
+    │   ├── MessagesScreen.tsx
+    │   ├── ChatScreen.tsx
+    │   └── ProfileScreen.tsx
+    ├── components/      # Reusable components
+    ├── lib/             # API and utilities
+    │   ├── supabaseClient.ts
+    │   ├── listingsApi.ts
+    │   ├── checkoutApi.ts
+    │   └── messagesApi.ts
+    ├── store/           # Zustand stores
+    ├── theme/           # Colors and typography
+    └── navigation/      # App navigation
 ```
 
-For detailed project requirements, see `../docs/PRD.md` and `../docs/ARCHITECTURE.md`.
+## Database Schema
+
+The app uses Supabase with these key tables:
+- `profiles` - User data
+- `listings` - Room listings with status (AVAILABLE/IN_CHECKOUT/BOOKED)
+- `checkout_sessions` - Active checkout sessions with 15-min expiry
+- `bookings` - Confirmed bookings
+- `chats` / `messages` - Messaging
+
+## Checkout Flow
+
+1. User clicks "Book Room" on available listing
+2. Listing locks for 15 minutes
+3. User completes 4-step checkout
+4. Booking request sent to host
+5. Host confirms within 24 hours
+
+For detailed documentation, see `../docs/`.

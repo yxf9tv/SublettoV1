@@ -5,7 +5,9 @@
 
 export const colors = {
   // Primary colors - Black & White theme for buttons/actions
+  primary: '#111827',     // Main brand color for buttons, links
   textPrimary: '#111827',
+  textSecondary: '#6B7280',  // Muted text
   accent: '#111827',  // Black for buttons and primary actions
   accentBlue: '#111827',  // Kept for backwards compatibility
   

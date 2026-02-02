@@ -104,7 +104,7 @@ export const initialFormData: ListingFormData = {
   photos: [],
   description: '',
   // Room MVP fields
-  totalSlots: 2,
+  totalSlots: 1,  // Each listing is one bookable room
   pricePerSpot: '',
   leaseTermMonths: '12',
   requirementsText: '',

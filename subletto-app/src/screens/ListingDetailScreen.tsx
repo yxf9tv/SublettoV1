@@ -12,25 +12,17 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRoute, useNavigation, useFocusEffect } from '@react-navigation/native';
 import type { RouteProp } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { fetchListingById, ListingWithImages } from '../lib/listingsApi';
 import { getOrCreateChat } from '../lib/messagesApi';
 import {
-  getSlotCounts,
-  expressInterest,
-  removeInterest,
-  checkUserInterest,
-  createCommitment,
-  cancelCommitment,
-  getActiveCommitment,
-} from '../lib/roomApi';
-import { formatProgress, formatSpotsLeft, LOCK_DURATION_HOURS } from '../constants/room';
-import RoomProgressBadge from '../components/RoomProgressBadge';
-import RoomSlotsModule from '../components/RoomSlotsModule';
-import CommitModal from '../components/CommitModal';
+  startCheckout,
+  canBookListing,
+  getActiveCheckoutSession,
+  ListingStatus,
+} from '../lib/checkoutApi';
 import { useAuthStore } from '../store/authStore';
 import { colors } from '../theme';
 
@@ -39,7 +31,7 @@ type RootStackParamList = {
   ListingDetail: { listingId: string };
   Chat: { chatId: string };
   EditListing: { listingId: string };
-  ActiveCommitment: undefined;
+  Checkout: { sessionId: string };
 };
 
 type ListingDetailRouteProp = RouteProp<RootStackParamList, 'ListingDetail'>;
@@ -59,14 +51,8 @@ export default function ListingDetailScreen() {
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [saved, setSaved] = useState(false);
   const [messagingLoading, setMessagingLoading] = useState(false);
-  
-  // Room MVP state
-  const [slotCounts, setSlotCounts] = useState({ total: 0, available: 0, locked: 0, filled: 0 });
-  const [isInterested, setIsInterested] = useState(false);
-  const [interestLoading, setInterestLoading] = useState(false);
-  const [commitModalVisible, setCommitModalVisible] = useState(false);
-  const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null);
-  const [slotRefreshTrigger, setSlotRefreshTrigger] = useState(0);
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingAvailable, setBookingAvailable] = useState<{ canBook: boolean; reason?: string }>({ canBook: false });
 
   // Use useFocusEffect to refetch listing data when returning from edit screen
   useFocusEffect(
@@ -75,32 +61,20 @@ export default function ListingDetailScreen() {
         try {
           setLoading(true);
           setError(null);
-          setCurrentImageIndex(0); // Reset image index when refetching
+          setCurrentImageIndex(0);
           const data = await fetchListingById(listingId);
           if (!data) {
             setError('Listing not found');
             return;
           }
           setListing(data);
-          
-          // Load slot counts for Room listings
-          if ((data as any).total_slots > 1) {
-            try {
-              const counts = await getSlotCounts(listingId);
-              setSlotCounts(counts);
-            } catch (err) {
-              console.warn('Failed to load slot counts:', err);
-            }
-          }
-          
-          // Check if user is interested in this listing
+
+          // Check booking availability
           if (user?.id) {
-            try {
-              const interested = await checkUserInterest(user.id, listingId);
-              setIsInterested(interested);
-            } catch (err) {
-              console.warn('Failed to check interest status:', err);
-            }
+            const availability = await canBookListing(listingId, user.id);
+            setBookingAvailable(availability);
+          } else {
+            setBookingAvailable({ canBook: false, reason: 'Sign in to book' });
           }
         } catch (err) {
           setError(err instanceof Error ? err.message : 'Failed to load listing');
@@ -115,19 +89,17 @@ export default function ListingDetailScreen() {
   );
 
   const handleSave = () => {
-    // TODO: Implement save functionality when auth is ready
     setSaved(!saved);
   };
 
   const handleMessage = async () => {
     if (!user?.id) {
-      Alert.alert('Sign In Required', 'Please sign in to message the lister.');
+      Alert.alert('Sign In Required', 'Please sign in to message the host.');
       return;
     }
 
     if (!listing) return;
 
-    // Can't message yourself
     if (listing.user_id === user.id) {
       Alert.alert('Info', "This is your own listing. You can't message yourself.");
       return;
@@ -150,108 +122,47 @@ export default function ListingDetailScreen() {
     navigation.navigate('EditListing', { listingId: listing.id });
   };
 
-  // Room MVP handlers
-  const handleInterestToggle = async () => {
+  const handleBookRoom = async () => {
     if (!user?.id) {
-      Alert.alert('Sign In Required', 'Please sign in to express interest.');
+      Alert.alert('Sign In Required', 'Please sign in to book a room.');
       return;
     }
-    
-    setInterestLoading(true);
-    try {
-      if (isInterested) {
-        await removeInterest(user.id, listingId);
-        setIsInterested(false);
-      } else {
-        await expressInterest(user.id, listingId);
-        setIsInterested(true);
-      }
-    } catch (err) {
-      Alert.alert('Error', err instanceof Error ? err.message : 'Failed to update interest');
-    } finally {
-      setInterestLoading(false);
-    }
-  };
 
-  const handleCommitStart = async (slotId: string) => {
-    if (!user?.id) {
-      Alert.alert('Sign In Required', 'Please sign in to commit to a spot.');
-      return;
-    }
-    
-    // Check if user already has an active commitment
-    try {
-      const existing = await getActiveCommitment(user.id);
-      if (existing) {
-        Alert.alert(
-          'Active Commitment',
-          'You already have an active commitment. Would you like to view it?',
-          [
-            { text: 'Cancel', style: 'cancel' },
-            { text: 'View', onPress: () => navigation.navigate('ActiveCommitment') },
-          ]
-        );
-        return;
-      }
-    } catch (err) {
-      // No existing commitment, proceed
-    }
-    
-    setSelectedSlotId(slotId);
-    setCommitModalVisible(true);
-  };
+    if (!listing) return;
 
-  const handleCommitConfirm = async (checklistAnswers: Record<string, boolean>) => {
-    if (!user?.id || !selectedSlotId || !listing) {
-      throw new Error('Missing required data');
-    }
-    
-    await createCommitment(user.id, listingId, selectedSlotId, checklistAnswers);
-    
-    // Refresh slot counts and slots module
-    setSlotRefreshTrigger((prev) => prev + 1);
-    const counts = await getSlotCounts(listingId);
-    setSlotCounts(counts);
-    
-    // Navigate to active commitment screen
-    navigation.navigate('ActiveCommitment');
-  };
-
-  const handleCancelCommitment = async (slotId: string) => {
-    if (!user?.id) return;
-    
-    Alert.alert(
-      'Cancel Commitment',
-      'Are you sure you want to release this spot? Someone else may take it.',
-      [
-        { text: 'Keep Spot', style: 'cancel' },
-        {
-          text: 'Release',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              const active = await getActiveCommitment(user.id);
-              if (active) {
-                await cancelCommitment(active.id);
-                setSlotRefreshTrigger((prev) => prev + 1);
-                const counts = await getSlotCounts(listingId);
-                setSlotCounts(counts);
-              }
-            } catch (err) {
-              Alert.alert('Error', 'Failed to cancel commitment');
-            }
+    // Check if user has an active checkout session
+    const existingSession = await getActiveCheckoutSession(user.id);
+    if (existingSession) {
+      Alert.alert(
+        'Active Checkout',
+        'You have an active checkout session. Complete or cancel it first.',
+        [
+          { text: 'Cancel', style: 'cancel' },
+          { 
+            text: 'Go to Checkout', 
+            onPress: () => navigation.navigate('Checkout', { sessionId: existingSession.id })
           },
-        },
-      ]
-    );
+        ]
+      );
+      return;
+    }
+
+    setBookingLoading(true);
+    try {
+      const result = await startCheckout(listingId, user.id);
+      navigation.navigate('Checkout', { sessionId: result.session_id });
+    } catch (err: any) {
+      Alert.alert('Error', err.message || 'Failed to start checkout');
+    } finally {
+      setBookingLoading(false);
+    }
   };
 
   // Check if current user is the owner of this listing
   const isOwner = user?.id && listing?.user_id === user.id;
-  
-  // Check if this is a multi-slot Room listing
-  const isRoomListing = listing && (listing as any).total_slots > 1;
-  const filledSlots = slotCounts.locked + slotCounts.filled;
+
+  // Get listing status
+  const listingStatus: ListingStatus = (listing as any)?.status || 'AVAILABLE';
 
   const formatDate = (dateString: string | null) => {
     if (!dateString) return 'Not specified';
@@ -271,7 +182,7 @@ export default function ListingDetailScreen() {
     return (
       <SafeAreaView style={styles.safeArea} edges={['top']}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2C67FF" />
+          <ActivityIndicator size="large" color={colors.primary} />
           <Text style={styles.loadingText}>Loading listing...</Text>
         </View>
       </SafeAreaView>
@@ -312,6 +223,23 @@ export default function ListingDetailScreen() {
         {/* Image Carousel */}
         <View style={styles.imageContainer}>
           <Image source={{ uri: currentImage }} style={styles.mainImage} />
+          
+          {/* Status Badge */}
+          {listingStatus !== 'AVAILABLE' && (
+            <View style={[
+              styles.statusBadge,
+              listingStatus === 'BOOKED' ? styles.statusBooked : styles.statusInCheckout
+            ]}>
+              <Ionicons 
+                name={listingStatus === 'BOOKED' ? 'checkmark-circle' : 'time'} 
+                size={16} 
+                color="#fff" 
+              />
+              <Text style={styles.statusBadgeText}>
+                {listingStatus === 'BOOKED' ? 'Booked' : 'In Checkout'}
+              </Text>
+            </View>
+          )}
           
           {/* Image Indicators */}
           {images.length > 1 && (
@@ -384,7 +312,7 @@ export default function ListingDetailScreen() {
             </View>
             <View style={styles.priceContainer}>
               <Text style={styles.price}>
-                {formatPrice(listing.price_monthly)}
+                {formatPrice((listing as any).price_per_spot || listing.price_monthly)}
               </Text>
               <Text style={styles.priceLabel}>/month</Text>
             </View>
@@ -415,88 +343,27 @@ export default function ListingDetailScreen() {
             )}
           </View>
 
-          {/* Room MVP: Momentum Strip */}
-          {isRoomListing && (
-            <View style={styles.momentumStrip}>
-              <View style={styles.momentumLeft}>
-                <RoomProgressBadge
-                  filled={filledSlots}
-                  total={slotCounts.total}
-                  size="large"
-                />
-                <Text style={styles.momentumText}>
-                  {formatSpotsLeft(filledSlots, slotCounts.total)}
-                </Text>
-              </View>
-              <View style={styles.momentumRight}>
-                <Ionicons name="time-outline" size={16} color="#6B7280" />
-                <Text style={styles.momentumHint}>
-                  Locks last {LOCK_DURATION_HOURS}h
-                </Text>
-              </View>
-            </View>
-          )}
-
-          {/* Room MVP: Interest Button */}
-          {isRoomListing && !isOwner && (
-            <TouchableOpacity
-              style={[
-                styles.interestButton,
-                isInterested && styles.interestButtonActive,
-              ]}
-              onPress={handleInterestToggle}
-              disabled={interestLoading}
-            >
-              {interestLoading ? (
-                <ActivityIndicator size="small" color={isInterested ? '#FFFFFF' : '#2C67FF'} />
-              ) : (
-                <>
-                  <Ionicons
-                    name={isInterested ? 'heart' : 'heart-outline'}
-                    size={20}
-                    color={isInterested ? '#FFFFFF' : '#2C67FF'}
-                  />
-                  <Text
-                    style={[
-                      styles.interestButtonText,
-                      isInterested && styles.interestButtonTextActive,
-                    ]}
-                  >
-                    {isInterested ? "I'm interested" : 'Express Interest'}
-                  </Text>
-                </>
-              )}
-            </TouchableOpacity>
-          )}
-
-          {/* Room MVP: Slots Module */}
-          {isRoomListing && !isOwner && (
-            <RoomSlotsModule
-              listingId={listingId}
-              currentUserId={user?.id || null}
-              onCommit={handleCommitStart}
-              onCancel={handleCancelCommitment}
-              refreshTrigger={slotRefreshTrigger}
-            />
-          )}
-
-          {/* Dates */}
-          {(listing.start_date || listing.end_date) && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Available Dates</Text>
-              <View style={styles.datesRow}>
-                <View style={styles.dateItem}>
-                  <Text style={styles.dateLabel}>Start</Text>
-                  <Text style={styles.dateValue}>
-                    {formatDate(listing.start_date)}
-                  </Text>
-                </View>
-                <View style={styles.dateItem}>
-                  <Text style={styles.dateLabel}>End</Text>
-                  <Text style={styles.dateValue}>
-                    {formatDate(listing.end_date)}
-                  </Text>
-                </View>
+          {/* Lease Info */}
+          {((listing as any).lease_term_months || listing.start_date) && (
+            <View style={styles.leaseInfoCard}>
+              <Text style={styles.leaseInfoTitle}>Lease Details</Text>
+              <View style={styles.leaseInfoGrid}>
+                {(listing as any).lease_term_months && (
+                  <View style={styles.leaseInfoItem}>
+                    <Ionicons name="calendar-outline" size={18} color={colors.primary} />
+                    <Text style={styles.leaseInfoText}>
+                      {(listing as any).lease_term_months} month lease
+                    </Text>
+                  </View>
+                )}
+                {listing.start_date && (
+                  <View style={styles.leaseInfoItem}>
+                    <Ionicons name="flag-outline" size={18} color={colors.primary} />
+                    <Text style={styles.leaseInfoText}>
+                      Available {formatDate(listing.start_date)}
+                    </Text>
+                  </View>
+                )}
               </View>
             </View>
           )}
@@ -508,7 +375,7 @@ export default function ListingDetailScreen() {
               <View style={styles.pricingItem}>
                 <Text style={styles.pricingLabel}>Monthly Rent</Text>
                 <Text style={styles.pricingValue}>
-                  {formatPrice(listing.price_monthly)}
+                  {formatPrice((listing as any).price_per_spot || listing.price_monthly)}
                 </Text>
               </View>
               {listing.utilities_monthly > 0 && (
@@ -538,6 +405,19 @@ export default function ListingDetailScreen() {
             </View>
           )}
 
+          {/* Requirements */}
+          {(listing as any).requirements_text && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Requirements</Text>
+              <View style={styles.requirementsCard}>
+                <Ionicons name="document-text-outline" size={20} color="#6B7280" />
+                <Text style={styles.requirementsText}>
+                  {(listing as any).requirements_text}
+                </Text>
+              </View>
+            </View>
+          )}
+
           {/* Amenities */}
           {listing.amenities &&
             Object.keys(listing.amenities).length > 0 && (
@@ -546,7 +426,7 @@ export default function ListingDetailScreen() {
                 <View style={styles.amenitiesGrid}>
                   {Object.entries(listing.amenities).map(([key, value]) => (
                     <View key={key} style={styles.amenityItem}>
-                      <Ionicons name="checkmark-circle" size={20} color="#10B981" />
+                      <Ionicons name="checkmark-circle" size={20} color={colors.success} />
                       <Text style={styles.amenityText}>
                         {typeof value === 'string' ? value : key}
                       </Text>
@@ -572,7 +452,7 @@ export default function ListingDetailScreen() {
             </Text>
           </TouchableOpacity>
         ) : (
-          // Visitor view: Save and Message buttons
+          // Visitor view
           <>
             <TouchableOpacity
               style={[styles.actionButton, styles.saveButton]}
@@ -581,54 +461,54 @@ export default function ListingDetailScreen() {
               <Ionicons
                 name={saved ? 'heart' : 'heart-outline'}
                 size={20}
-                color={saved ? '#FFFFFF' : '#111827'}
+                color={saved ? colors.error : '#111827'}
               />
-              <Text
-                style={[
-                  styles.actionButtonText,
-                  saved && styles.actionButtonTextActive,
-                ]}
-              >
-                {saved ? 'Saved' : 'Save'}
-              </Text>
             </TouchableOpacity>
+            
+            {bookingAvailable.canBook ? (
+              <TouchableOpacity
+                style={[styles.actionButton, styles.bookButton]}
+                onPress={handleBookRoom}
+                disabled={bookingLoading}
+              >
+                {bookingLoading ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Ionicons name="flash" size={20} color="#FFFFFF" />
+                    <Text style={[styles.actionButtonText, styles.bookButtonText]}>
+                      Book Room
+                    </Text>
+                  </>
+                )}
+              </TouchableOpacity>
+            ) : (
+              <View style={[styles.actionButton, styles.unavailableButton]}>
+                <Ionicons 
+                  name={listingStatus === 'BOOKED' ? 'checkmark-circle' : 'time-outline'} 
+                  size={20} 
+                  color="#6B7280" 
+                />
+                <Text style={styles.unavailableText}>
+                  {bookingAvailable.reason || 'Unavailable'}
+                </Text>
+              </View>
+            )}
+            
             <TouchableOpacity
               style={[styles.actionButton, styles.messageButton]}
               onPress={handleMessage}
               disabled={messagingLoading}
             >
               {messagingLoading ? (
-                <ActivityIndicator size="small" color="#FFFFFF" />
+                <ActivityIndicator size="small" color={colors.primary} />
               ) : (
-                <>
-                  <Ionicons name="chatbubble-ellipses-outline" size={20} color="#FFFFFF" />
-                  <Text style={[styles.actionButtonText, styles.messageButtonText]}>
-                    Message Lister
-                  </Text>
-                </>
+                <Ionicons name="chatbubble-outline" size={20} color={colors.primary} />
               )}
             </TouchableOpacity>
           </>
         )}
       </View>
-
-      {/* Room MVP: Commit Modal */}
-      {listing && (
-        <CommitModal
-          visible={commitModalVisible}
-          onClose={() => {
-            setCommitModalVisible(false);
-            setSelectedSlotId(null);
-          }}
-          onConfirm={handleCommitConfirm}
-          listingTitle={listing.title}
-          pricePerSpot={(listing as any).price_per_spot || listing.price_monthly}
-          leaseTermMonths={(listing as any).lease_term_months}
-          startDate={listing.start_date}
-          utilitiesIncluded={listing.utilities_monthly === 0}
-          requirementsText={(listing as any).requirements_text}
-        />
-      )}
     </SafeAreaView>
   );
 }
@@ -636,7 +516,7 @@ export default function ListingDetailScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: colors.background,
   },
   scroll: {
     flex: 1,
@@ -650,7 +530,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   errorContainer: {
     flex: 1,
@@ -673,12 +553,12 @@ const styles = StyleSheet.create({
   errorText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#111827',
+    color: colors.textPrimary,
     textAlign: 'center',
     marginBottom: 24,
   },
   retryButton: {
-    backgroundColor: '#2C67FF',
+    backgroundColor: colors.primary,
     paddingHorizontal: 24,
     paddingVertical: 12,
     borderRadius: 8,
@@ -697,6 +577,28 @@ const styles = StyleSheet.create({
     width: '100%',
     height: '100%',
     resizeMode: 'cover',
+  },
+  statusBadge: {
+    position: 'absolute',
+    top: 16,
+    right: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 20,
+  },
+  statusBooked: {
+    backgroundColor: '#DC2626',
+  },
+  statusInCheckout: {
+    backgroundColor: '#D97706',
+  },
+  statusBadgeText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#fff',
   },
   imageIndicators: {
     position: 'absolute',
@@ -767,7 +669,7 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 24,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 8,
   },
   locationRow: {
@@ -776,7 +678,7 @@ const styles = StyleSheet.create({
   },
   location: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
     marginLeft: 4,
   },
   priceContainer: {
@@ -785,11 +687,11 @@ const styles = StyleSheet.create({
   price: {
     fontSize: 28,
     fontWeight: '700',
-    color: '#111827',
+    color: colors.textPrimary,
   },
   priceLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   detailsRow: {
     flexDirection: 'row',
@@ -806,8 +708,32 @@ const styles = StyleSheet.create({
   },
   detailText: {
     fontSize: 14,
-    color: '#111827',
+    color: colors.textPrimary,
     fontWeight: '500',
+  },
+  leaseInfoCard: {
+    backgroundColor: '#F9FAFB',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 24,
+  },
+  leaseInfoTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: colors.textPrimary,
+    marginBottom: 12,
+  },
+  leaseInfoGrid: {
+    gap: 12,
+  },
+  leaseInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  leaseInfoText: {
+    fontSize: 15,
+    color: colors.textPrimary,
   },
   section: {
     marginBottom: 24,
@@ -815,25 +741,8 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
     marginBottom: 12,
-  },
-  datesRow: {
-    flexDirection: 'row',
-    gap: 24,
-  },
-  dateItem: {
-    flex: 1,
-  },
-  dateLabel: {
-    fontSize: 12,
-    color: '#6B7280',
-    marginBottom: 4,
-  },
-  dateValue: {
-    fontSize: 16,
-    color: '#111827',
-    fontWeight: '500',
   },
   pricingRow: {
     gap: 16,
@@ -846,17 +755,31 @@ const styles = StyleSheet.create({
   },
   pricingLabel: {
     fontSize: 14,
-    color: '#6B7280',
+    color: colors.textSecondary,
   },
   pricingValue: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
+    color: colors.textPrimary,
   },
   description: {
     fontSize: 15,
     color: '#374151',
     lineHeight: 24,
+  },
+  requirementsCard: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    backgroundColor: '#FEF3C7',
+    padding: 16,
+    borderRadius: 12,
+  },
+  requirementsText: {
+    flex: 1,
+    fontSize: 14,
+    color: '#92400E',
+    lineHeight: 22,
   },
   amenitiesGrid: {
     flexDirection: 'row',
@@ -874,7 +797,7 @@ const styles = StyleSheet.create({
   },
   amenityText: {
     fontSize: 14,
-    color: '#111827',
+    color: colors.textPrimary,
   },
   actionBar: {
     position: 'absolute',
@@ -889,7 +812,6 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   actionButton: {
-    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
@@ -898,17 +820,38 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   saveButton: {
+    width: 52,
     backgroundColor: '#F3F4F6',
     borderWidth: 1,
     borderColor: '#E5E7EB',
   },
   messageButton: {
-    backgroundColor: '#111827',
-    flex: 2,
+    width: 52,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: colors.primary,
+  },
+  bookButton: {
+    flex: 1,
+    backgroundColor: colors.success,
+  },
+  bookButtonText: {
+    color: '#FFFFFF',
+  },
+  unavailableButton: {
+    flex: 1,
+    backgroundColor: '#F3F4F6',
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  unavailableText: {
+    fontSize: 14,
+    fontWeight: '500',
+    color: '#6B7280',
   },
   editButton: {
-    backgroundColor: '#2C67FF',
     flex: 1,
+    backgroundColor: colors.primary,
   },
   editButtonText: {
     color: '#FFFFFF',
@@ -916,68 +859,6 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#111827',
-  },
-  actionButtonTextActive: {
-    color: '#FFFFFF',
-  },
-  messageButtonText: {
-    color: '#FFFFFF',
-  },
-  // Room MVP styles
-  momentumStrip: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    backgroundColor: '#F0F9FF',
-    padding: 16,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: '#BAE6FD',
-  },
-  momentumLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-  },
-  momentumText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: '#0369A1',
-  },
-  momentumRight: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-  },
-  momentumHint: {
-    fontSize: 13,
-    color: '#6B7280',
-  },
-  interestButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#EFF6FF',
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: '#2C67FF',
-    gap: 8,
-  },
-  interestButtonActive: {
-    backgroundColor: '#2C67FF',
-    borderColor: '#2C67FF',
-  },
-  interestButtonText: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#2C67FF',
-  },
-  interestButtonTextActive: {
-    color: '#FFFFFF',
+    color: colors.textPrimary,
   },
 });
-

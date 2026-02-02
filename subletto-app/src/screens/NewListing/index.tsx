@@ -134,23 +134,14 @@ export default function NewListingWizard() {
           Alert.alert('Missing Info', 'Please enter the city and state');
           return false;
         }
-        // Room-specific validation
-        if (formData.type === 'ROOM') {
-          if (!formData.pricePerSpot || parseInt(formData.pricePerSpot) <= 0) {
-            Alert.alert('Missing Info', 'Please enter a price per spot for Room listings');
-            return false;
-          }
-          if (formData.totalSlots < 2) {
-            Alert.alert('Invalid', 'Room listings must have at least 2 spots');
-            return false;
-          }
+        // Room-specific validation - must have monthly rent
+        if (!formData.pricePerSpot || parseInt(formData.pricePerSpot) <= 0) {
+          Alert.alert('Missing Info', 'Please enter a monthly rent for your room');
+          return false;
         }
         return true;
       case 2:
-        if (!formData.priceMonthly || parseInt(formData.priceMonthly) <= 0) {
-          Alert.alert('Missing Info', 'Please enter a monthly rent price');
-          return false;
-        }
+        // Additional pricing details are optional now since main price is in step 1
         return true;
       case 3:
         // Dates are optional for now
@@ -215,12 +206,17 @@ export default function NewListingWizard() {
     // Try to get coordinates for the city
     const cityCoords = formData.city ? getCityCoordinates(formData.city) : null;
 
+    // For Room listings, use pricePerSpot as the main price
+    const monthlyPrice = formData.pricePerSpot 
+      ? parseInt(formData.pricePerSpot) 
+      : (parseInt(formData.priceMonthly) || 0);
+
     // Build payload
     const payload: CreateListingPayload | UpdateListingPayload = {
       title: formData.title,
       description: formData.description || undefined,
       type: formData.type,
-      price_monthly: parseInt(formData.priceMonthly) || 0,
+      price_monthly: monthlyPrice,
       utilities_monthly: formData.utilitiesMonthly
         ? parseInt(formData.utilitiesMonthly)
         : 0,
@@ -243,10 +239,8 @@ export default function NewListingWizard() {
       furnished: formData.furnished,
       amenities: amenitiesObj,
       // Room MVP fields
-      total_slots: formData.type === 'ROOM' ? formData.totalSlots : 1,
-      price_per_spot: formData.pricePerSpot 
-        ? parseInt(formData.pricePerSpot) 
-        : undefined,
+      total_slots: 1,  // Each listing is one bookable room
+      price_per_spot: monthlyPrice,
       lease_term_months: formData.leaseTermMonths
         ? parseInt(formData.leaseTermMonths)
         : undefined,

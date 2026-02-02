@@ -1,9 +1,14 @@
 // Room MVP Constants
 
+// Legacy - keeping for backwards compatibility
 export const LOCK_DURATION_HOURS = 48;
 
 // Feature flag - set to true to enable Room mode
 export const ROOM_MODE = true;
+
+// Checkout system constants
+export const CHECKOUT_SESSION_MINUTES = 15;
+export const CHECKOUT_WARNING_THRESHOLD_SECONDS = 120; // Show warning when 2 min left
 
 // Format functions for consistent UI display
 // Shows spots LEFT (decreases as people sign up)
