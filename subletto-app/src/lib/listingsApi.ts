@@ -4,6 +4,9 @@ import { supabase } from './supabaseClient';
 // Room is now the only listing type - the app focuses on filling multi-bedroom units one spot at a time
 export type ListingType = 'ROOM';
 
+// Listing status for checkout system
+export type ListingStatus = 'AVAILABLE' | 'IN_CHECKOUT' | 'BOOKED';
+
 export interface Listing {
   id: string;
   user_id: string;
@@ -27,6 +30,7 @@ export interface Listing {
   furnished: boolean;
   amenities: Record<string, any>;
   is_active: boolean;
+  status: ListingStatus;
   created_at: string;
   updated_at: string;
   // Room MVP fields
@@ -562,9 +566,7 @@ export async function updateListingWithImages(
   imagesToDelete: ListingImage[]
 ): Promise<ListingWithImages> {
   // 1. Update the listing record
-  const listing = await updateListing(listingId, payload);
-
-  // 2. Delete removed images
+  const listing = await updateListing(listingId, payload);  // 2. Delete removed images
   for (const image of imagesToDelete) {
     try {
       await deleteListingImage(image.id, image.url);
