@@ -1,0 +1,255 @@
+"Task ID","Phase","Category","Task Name","Description","Subtasks","Priority","Estimated Hours","Dependencies","Detailed Steps"
+"PUSH-001","Phase 1: Push Notifications","Core Setup","Set up Expo Push Notifications","Configure expo-notifications, request permissions, set up notification handlers","Install package, configure app.json, add permission request on startup","High",8,"None","1. Run: cd subletto-app && npx expo install expo-notifications expo-device expo-constants
+2. Update app.json: Add plugins section with expo-notifications config
+3. Create src/lib/notificationService.ts with Notifications.setNotificationHandler
+4. Add registerForPushNotifications() function that checks Device.isDevice, requests permissions, and gets ExpoPushToken
+5. Call registerForPushNotifications in App.tsx useEffect on mount
+6. Store push token in user profile table
+7. Test on physical device (simulators don't support push)"
+"PUSH-002","Phase 1: Push Notifications","Backend","Create Edge Function for push delivery","Supabase Edge Function to send notifications via Expo Push API","Create function, handle payload format, add error handling","High",6,"PUSH-001","1. Create supabase/functions/send-push-notification/index.ts
+2. Import Expo server SDK or use fetch to https://exp.host/--/api/v2/push/send
+3. Accept payload: { pushToken, title, body, data }
+4. Format Expo push message with sound and badge
+5. Deploy: supabase functions deploy send-push-notification
+6. Test with curl using Expo push token"
+"PUSH-003","Phase 1: Push Notifications","Triggers","Message notification triggers","Send push when new message received","Database trigger on messages insert, call edge function","High",4,"PUSH-002","1. Create Postgres function notify_new_message() that:
+   - Gets recipient's push_token from profiles
+   - Calls send-push-notification edge function via pg_net
+2. Create trigger: AFTER INSERT ON messages FOR EACH ROW EXECUTE notify_new_message()
+3. Test by sending message and verifying push received"
+"PUSH-004","Phase 1: Push Notifications","Triggers","Booking notification triggers","Send push for booking status changes","Notify on booking request, approval, rejection","High",4,"PUSH-002","1. Create Postgres function notify_booking_update() that:
+   - Determines notification type (new request, approved, rejected)
+   - Gets recipient push_token
+   - Calls edge function with appropriate message
+2. Create trigger: AFTER INSERT OR UPDATE ON bookings FOR EACH ROW EXECUTE notify_booking_update()
+3. Test each booking status change"
+"PUSH-005","Phase 1: Push Notifications","UI","In-app notification handling","Handle notifications when app is in foreground","Display toast or banner, navigate on tap","Medium",4,"PUSH-001","1. Add notification listener in App.tsx: Notifications.addNotificationReceivedListener
+2. Show Toast component when notification received in foreground
+3. Add response listener: Notifications.addNotificationResponseReceivedListener
+4. Parse notification data and navigate to appropriate screen (chat, booking, etc.)
+5. Clean up listeners on unmount"
+"PAY-001","Phase 2: Payments","Setup","Stripe account & API keys setup","Create Stripe account, get publishable and secret keys","Account creation, test mode setup, key retrieval","High",4,"None","1. Create Stripe account at stripe.com
+2. Enable test mode in dashboard
+3. Copy Publishable Key (pk_test_...) to .env as EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY
+4. Copy Secret Key (sk_test_...) for Edge Function use
+5. Store secret key in Supabase Vault: supabase secrets set STRIPE_SECRET_KEY=sk_test_..."
+"PAY-002","Phase 2: Payments","Backend","Payment intent Edge Function","Create Stripe payment intents from Supabase Edge Function","Secure backend for payment processing","High",8,"PAY-001","1. Create supabase/functions/create-payment-intent/index.ts
+2. Initialize Stripe with secret key from Deno.env
+3. Accept: { amount, currency, userId, bookingId, metadata }
+4. Call stripe.paymentIntents.create({ amount, currency, metadata })
+5. Return { clientSecret, paymentIntentId }
+6. Deploy and test with curl"
+"PAY-003","Phase 2: Payments","Frontend","Stripe SDK integration","Install and configure @stripe/stripe-react-native","SDK setup, provider configuration","High",6,"PAY-001","1. Run: npx expo install @stripe/stripe-react-native
+2. Update app.json: Add stripe plugin with merchantIdentifier
+3. Wrap App with StripeProvider in App.tsx:
+   <StripeProvider publishableKey={EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY}>
+4. Test initialization logs on app start"
+"PAY-004","Phase 2: Payments","UI","Payment UI in checkout flow","Add payment step to CheckoutScreen with card input","Card element, pay button, error handling","High",8,"PAY-002,PAY-003","1. Add Step 5 'Payment' to CheckoutScreen
+2. Import CardField from @stripe/stripe-react-native
+3. On submit: Call create-payment-intent Edge Function
+4. Get clientSecret, call confirmPayment({ paymentIntentClientSecret, type: 'Card' })
+5. Handle success: Complete checkout, navigate to confirmation
+6. Handle error: Show error message, allow retry"
+"PAY-005","Phase 2: Payments","Backend","Webhook handler for payment events","Edge Function to handle Stripe webhooks","Payment success/failure handling, update booking status","High",6,"PAY-002","1. Create supabase/functions/stripe-webhook/index.ts
+2. Verify webhook signature with stripe.webhooks.constructEvent
+3. Handle payment_intent.succeeded: Update booking payment_status = 'PAID'
+4. Handle payment_intent.failed: Update booking payment_status = 'FAILED'
+5. Deploy and configure webhook URL in Stripe dashboard
+6. Test with Stripe CLI: stripe trigger payment_intent.succeeded"
+"PAY-006","Phase 2: Payments","Backend","Host payout system (Stripe Connect)","Enable payouts to hosts via Stripe Connect","Connected accounts, payout scheduling","Medium",12,"PAY-001,PAY-002","1. Enable Stripe Connect in dashboard
+2. Create connect-account Edge Function to create Express accounts
+3. Build onboarding flow with AccountLink
+4. On booking completion, create Transfer to host's connected account
+5. Handle payout schedule (manual or automatic)
+6. Build payout dashboard in ProfileScreen"
+"AUTH-001","Phase 3: Social Auth","iOS","Apple Sign-In implementation","Native Apple authentication","Configure capabilities, implement sign-in flow","High",8,"None","1. Enable Apple Sign-In capability in Xcode (requires Apple Developer account)
+2. Update app.json: Add 'apple' to ios.usesAppleSignIn
+3. Run: npx expo install expo-apple-authentication
+4. Create AppleSignInButton component
+5. Call AppleAuthentication.signInAsync()
+6. Get identityToken, call supabase.auth.signInWithIdToken({ provider: 'apple', token })
+7. Create profile if new user
+8. Test on physical iOS device"
+"AUTH-002","Phase 3: Social Auth","Android","Google Sign-In implementation","Google OAuth authentication","Configure OAuth client, implement sign-in flow","High",8,"None","1. Create OAuth 2.0 Client ID in Google Cloud Console
+2. Configure OAuth consent screen
+3. Run: npx expo install @react-native-google-signin/google-signin
+4. Add webClientId to GoogleSignin.configure()
+5. Create GoogleSignInButton component
+6. Call GoogleSignin.signIn(), get idToken
+7. Call supabase.auth.signInWithIdToken({ provider: 'google', token })
+8. Create profile if new user
+9. Test on Android emulator/device"
+"AUTH-003","Phase 3: Social Auth","Integration","Auth flow updates for social login","Update login/signup screens with social buttons","UI updates, auth state handling","Medium",4,"AUTH-001,AUTH-002","1. Add Apple/Google buttons to LoginScreen below email form
+2. Add Apple/Google buttons to SignUpScreen
+3. Add 'or continue with' divider
+4. Handle loading states for each auth method
+5. Ensure profile creation works for all auth methods
+6. Update authStore to handle social auth sessions"
+"REV-001","Phase 4: Reviews","Database","Reviews table & RLS","Create reviews table with proper constraints","Table creation, foreign keys, RLS policies","High",4,"None","1. Create reviews table:
+   CREATE TABLE reviews (
+     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+     booking_id UUID REFERENCES bookings(id),
+     reviewer_id UUID REFERENCES profiles(id),
+     reviewee_id UUID REFERENCES profiles(id),
+     listing_id UUID REFERENCES listings(id),
+     rating INTEGER CHECK (rating >= 1 AND rating <= 5),
+     comment TEXT,
+     review_type TEXT CHECK (review_type IN ('HOST_TO_GUEST', 'GUEST_TO_HOST')),
+     created_at TIMESTAMPTZ DEFAULT now()
+   );
+2. Add RLS: Users can read all, create only for completed bookings they participated in
+3. Add unique constraint: One review per booking per direction"
+"REV-002","Phase 4: Reviews","Backend","Reviews API","CRUD operations for reviews","Fetch, create, aggregate ratings","High",4,"REV-001","1. Create src/lib/reviewsApi.ts
+2. fetchUserReviews(userId): Get reviews where reviewee_id = userId
+3. fetchListingReviews(listingId): Get reviews for listing
+4. createReview(payload): Insert review after validation
+5. getAverageRating(userId): Calculate AVG(rating) for user
+6. Add review count to profile fetches"
+"REV-003","Phase 4: Reviews","UI","Review submission flow","UI for leaving reviews after booking","Star rating input, comment field, submit","High",6,"REV-002","1. Create src/screens/WriteReviewScreen.tsx
+2. Build 5-star rating component (tappable stars)
+3. Add comment TextInput (max 500 chars)
+4. Validate: Rating required, comment optional
+5. Submit to createReview API
+6. Navigate back with success message"
+"REV-004","Phase 4: Reviews","UI","Display reviews on profiles","Show reviews and ratings on user profiles","Review list, aggregate rating display","Medium",4,"REV-002","1. Update ProfileScreen to fetch and display user reviews
+2. Show aggregate rating with star icons
+3. Build ReviewCard component with:
+   - Reviewer name and avatar
+   - Star rating
+   - Comment text
+   - Date
+4. Add 'Reviews' tab to profile"
+"REV-005","Phase 4: Reviews","Triggers","Review request notifications","Prompt for review after booking completion","Timing logic, notification trigger","Low",3,"REV-001,PUSH-002","1. Create scheduled job or booking status trigger
+2. After booking end_date + 1 day, send push notification
+3. Notification links to WriteReviewScreen with booking context
+4. Track if review already submitted to avoid duplicate prompts"
+"ASSET-001","Phase 5: App Store Assets","Icon","App icon (1024x1024)","Create high-res app icon for App Store","Design, export, add to project","High",4,"None","1. Design app icon at 1024x1024 pixels
+2. Follow Apple guidelines: No transparency, simple design, recognizable
+3. Export as PNG without alpha channel
+4. Create icon variants: 180x180 (iPhone), 167x167 (iPad Pro), etc.
+5. Add to assets/icon.png
+6. Update app.json: 'icon': './assets/icon.png'"
+"ASSET-002","Phase 5: App Store Assets","Screenshots","App Store screenshots (6.5in, 5.5in)","Capture key screens for App Store listing","Screenshot all main features","High",6,"None","1. Run app on iPhone 15 Pro Max (6.7in) simulator
+2. Capture: Home, Listing Detail, Checkout, Booking Confirmation, Map
+3. Run on iPhone 8 Plus (5.5in) for older size
+4. Add marketing text overlays (optional)
+5. Export at exact App Store dimensions
+6. Prepare 5-10 screenshots per device size"
+"ASSET-003","Phase 5: App Store Assets","Marketing","App description & keywords","Write compelling App Store description","Main description, subtitle, keywords","High",4,"None","1. Write app name: 'Room - Find Your Spot'
+2. Write subtitle (30 chars): 'Easy Room Rentals'
+3. Write description (4000 chars max):
+   - Opening hook
+   - Key features list
+   - How it works
+   - Call to action
+4. Research and list keywords (100 chars total)
+5. Write 'What's New' for version 1.0"
+"ASSET-004","Phase 5: App Store Assets","Legal","Privacy policy & terms of service","Create required legal documents","Privacy policy, terms, support URL","High",4,"None","1. Create privacy policy covering: Data collected, usage, sharing, retention
+2. Create terms of service for marketplace use
+3. Host on website or use service like Termly/Iubenda
+4. Add URLs to App Store Connect
+5. Add privacy policy link in app settings"
+"ASSET-005","Phase 5: App Store Assets","Metadata","App Store Connect metadata","Complete all required metadata fields","Category, age rating, contact info","High",3,"None","1. Select primary category: Lifestyle
+2. Select secondary category: Travel (optional)
+3. Complete age rating questionnaire
+4. Add support URL and marketing URL
+5. Add contact email and phone
+6. Set pricing (Free with In-App Purchases if using payments)"
+"BUILD-001","Phase 6: Build & Deploy","EAS","EAS Build configuration","Set up Expo Application Services for builds","eas.json, credentials, build profiles","High",6,"None","1. Install EAS CLI: npm install -g eas-cli
+2. Login: eas login
+3. Initialize: eas build:configure
+4. This creates eas.json with development, preview, production profiles
+5. Configure production profile with proper distribution
+6. Set up environment variables in EAS dashboard"
+"BUILD-002","Phase 6: Build & Deploy","Credentials","iOS certificates & provisioning","Set up Apple Developer certificates","Distribution cert, provisioning profile","High",4,"BUILD-001","1. Ensure Apple Developer Program membership ($99/year)
+2. Run: eas credentials
+3. Select iOS, then Production
+4. Let EAS manage certificates (recommended) or upload own
+5. EAS creates: Distribution Certificate, App Store Provisioning Profile
+6. Verify in Apple Developer portal"
+"BUILD-003","Phase 6: Build & Deploy","Environment","Production environment variables","Configure production Supabase and API keys","Secure key management, EAS secrets","High",3,"BUILD-001","1. Create production Supabase project (or use existing)
+2. In EAS dashboard, add secrets:
+   - EXPO_PUBLIC_SUPABASE_URL (production)
+   - EXPO_PUBLIC_SUPABASE_ANON_KEY (production)
+   - EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY (live key)
+   - EXPO_PUBLIC_GOOGLE_MAPS_API_KEY
+3. Update eas.json to use production env for production profile"
+"BUILD-004","Phase 6: Build & Deploy","Build","Production iOS build","Create App Store ready .ipa file","Build, verify, download artifact","High",4,"BUILD-002,BUILD-003","1. Increment version in app.json (e.g., '1.0.0')
+2. Run: eas build --platform ios --profile production
+3. Monitor build in EAS dashboard (takes ~15-30 minutes)
+4. Download .ipa artifact when complete
+5. Verify app works by testing on TestFlight first"
+"BUILD-005","Phase 6: Build & Deploy","Testing","TestFlight distribution","Upload to TestFlight for beta testing","Upload, add testers, gather feedback","High",4,"BUILD-004","1. Run: eas submit --platform ios
+2. This uploads to App Store Connect automatically
+3. Wait for processing (up to 1 hour)
+4. In TestFlight, add internal testers (team)
+5. Add external testers with TestFlight link
+6. Gather feedback, fix critical bugs"
+"QA-001","Phase 7: QA & Testing","Auth","Authentication flow testing","Test all auth scenarios","Login, signup, logout, session persistence","High",4,"None","1. Test email/password signup with valid data
+2. Test signup validation (invalid email, short password)
+3. Test login with correct credentials
+4. Test login with wrong password
+5. Test session persistence (close and reopen app)
+6. Test logout
+7. Test social auth (Apple, Google) on real devices"
+"QA-002","Phase 7: QA & Testing","Listings","Listing CRUD testing","Test create, read, update, delete listings","All listing operations, edge cases","High",4,"None","1. Create listing with all fields
+2. Create listing with minimum required fields
+3. View listing detail
+4. Edit listing, verify changes saved
+5. Delete listing, verify removed
+6. Test image upload (multiple images)
+7. Test address autocomplete"
+"QA-003","Phase 7: QA & Testing","Checkout","Checkout flow testing","Test booking checkout end-to-end","Timer, payment, confirmation","High",6,"None","1. Start checkout, verify timer starts at 15 min
+2. Let timer expire, verify redirected and listing available again
+3. Cancel checkout manually, verify listing available
+4. Complete checkout without payment (test mode)
+5. Complete checkout with Stripe test card (4242 4242 4242 4242)
+6. Verify booking created
+7. Verify listing status changes to BOOKED"
+"QA-004","Phase 7: QA & Testing","Messaging","Chat functionality testing","Test messaging features","Send, receive, real-time updates","Medium",3,"None","1. Start new chat from listing
+2. Send message, verify appears
+3. Receive message (use second account), verify appears
+4. Test real-time: Both users online, messages appear instantly
+5. Test notification: One user backgrounded, receives push
+6. Test empty chat state"
+"QA-005","Phase 7: QA & Testing","Performance","Performance & crash testing","Test app performance and stability","Load times, memory, crash scenarios","Medium",4,"None","1. Measure Home screen load time (should be <2s)
+2. Scroll through 100+ listings, check for lag
+3. Test on older device (iPhone 8 / Android equivalent)
+4. Test with slow network (use Network Link Conditioner)
+5. Test offline behavior
+6. Monitor for memory leaks using Xcode Instruments"
+"QA-006","Phase 7: QA & Testing","Cross-platform","iOS/Android parity testing","Ensure consistent experience across platforms","UI, functionality, performance comparison","Medium",4,"None","1. Run through all QA tests on iOS
+2. Run through all QA tests on Android
+3. Document any platform-specific differences
+4. Test on different screen sizes
+5. Verify keyboard handling on both platforms
+6. Check date pickers, action sheets, etc."
+"SUB-001","Phase 8: Submission","Review","App Store review preparation","Prepare for Apple review process","Review guidelines, demo account","High",4,"BUILD-005","1. Read Apple App Store Review Guidelines thoroughly
+2. Create demo account for reviewers:
+   - Email: demo@roomapp.com
+   - Password: (document in App Store Connect)
+3. Prepare notes explaining any non-obvious features
+4. Document any required permissions with justification
+5. Ensure privacy policy and terms are accessible"
+"SUB-002","Phase 8: Submission","Submit","Submit to App Store","Submit app for review","Final submission, monitoring","High",3,"SUB-001","1. In App Store Connect, select build from TestFlight
+2. Complete all required metadata fields
+3. Add screenshots and preview videos
+4. Set pricing and availability
+5. Answer export compliance questions (usually No for typical apps)
+6. Submit for review
+7. Monitor status (typically 24-48 hours for first review)"
+"SUB-003","Phase 8: Submission","Rejection","Handle review feedback","Address any review rejection issues","Read feedback, make fixes, resubmit","Medium",8,"SUB-002","1. If rejected, read rejection reason carefully
+2. Common issues: Missing permission descriptions, payment policy, crashes
+3. Fix identified issues
+4. If unclear, contact App Review via Resolution Center
+5. Create new build with fixes
+6. Upload and resubmit
+7. Expedited review possible for critical fixes"
+"SUB-004","Phase 8: Submission","Launch","App Store launch","Release approved app to public","Phased rollout or immediate release","High",2,"SUB-002","1. Once approved, choose release option:
+   - Immediately (goes live within 24 hours)
+   - Manually (you control when)
+   - Phased rollout (7 days, gradual)
+2. For v1.0, recommend manual to coordinate marketing
+3. Monitor crash reports in App Store Connect
+4. Monitor reviews and ratings
+5. Prepare for v1.1 with bug fixes"
