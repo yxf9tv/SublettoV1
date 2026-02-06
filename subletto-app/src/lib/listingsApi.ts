@@ -220,8 +220,8 @@ export async function createListing(
   payload: CreateListingPayload,
   userId: string
 ): Promise<Listing> {
-  const totalSlots = payload.total_slots ?? payload.bedrooms ?? 1;
-  
+  // Note: status defaults to 'AVAILABLE' in the database
+  // Status changes are handled by checkout functions (start_checkout, complete_checkout, etc.)
   const { data, error } = await supabase
     .from('listings')
     .insert({
@@ -234,7 +234,7 @@ export async function createListing(
       furnished: payload.furnished ?? false,
       amenities: payload.amenities ?? {},
       is_active: true,
-      total_slots: totalSlots,
+      total_slots: payload.total_slots ?? 1,
       price_per_spot: payload.price_per_spot ?? null,
       lease_term_months: payload.lease_term_months ?? null,
       requirements_text: payload.requirements_text ?? null,
@@ -244,23 +244,6 @@ export async function createListing(
 
   if (error) {
     throw new Error(`Failed to create listing: ${error.message}`);
-  }
-
-  // Auto-create room slots for multi-slot listings
-  if (totalSlots > 1) {
-    const slotsToCreate = Array.from({ length: totalSlots }, (_, i) => ({
-      listing_id: data.id,
-      slot_number: i + 1,
-      status: 'available',
-    }));
-
-    const { error: slotsError } = await supabase
-      .from('room_slots')
-      .insert(slotsToCreate);
-
-    if (slotsError) {
-      console.warn('Failed to create room slots:', slotsError.message);
-    }
   }
 
   return data;
